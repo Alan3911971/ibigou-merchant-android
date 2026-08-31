@@ -17,19 +17,21 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
       with:
         packages: 'platforms;android-34 build-tools;34.0.0'
 
-    - name: Generate Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.2
+    - name: Install Gradle
+      run: |
+        wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+        unzip -q gradle-8.2-bin.zip
+        echo "$PWD/gradle-8.2/bin" >> $GITHUB_PATH
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: Generate Wrapper & Build APK
+      run: |
+        gradle wrapper --gradle-version 8.2
+        ./gradlew assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
