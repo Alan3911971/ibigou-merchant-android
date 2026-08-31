@@ -44,7 +44,7 @@ public class BluetoothPrintService {
             BluetoothAdapter ba = bm.getAdapter();
             if (ba == null || !ba.isEnabled()) return false;
             BluetoothDevice dev = ba.getRemoteDevice(address);
-            socket = dev.createRfcommSocketToRecord(SPP_UUID);
+            socket = dev.createRfcommSocketToServiceRecord(SPP_UUID);
             ba.cancelDiscovery();
             socket.connect();
             out = socket.getOutputStream();
