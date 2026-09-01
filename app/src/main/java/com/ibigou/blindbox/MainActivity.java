@@ -170,12 +170,47 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showDevicePicker() {
-        if (btAdapter == null || !btAdapter.isEnabled()) {
-            Toast.makeText(this, "蓝牙未开启", Toast.LENGTH_SHORT).show();
+        if (Build.VERSION.SDK_INT >= 31) {
+            String[] needed = new String[]{
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN,
+                android.Manifest.permission.ACCESS_FINE_LOCATION
+            };
+            boolean needRequest = false;
+            for (String p : needed) {
+                if (ContextCompat.checkSelfPermission(this, p) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    needRequest = true; break;
+                }
+            }
+            if (needRequest) {
+                runOnUiThread(() -> {
+                    new AlertDialog.Builder(this)
+                        .setTitle("需要蓝牙权限")
+                        .setMessage("连接蓝牙设备需要权限，请点允许。")
+                        .setPositiveButton("允许", (d, w) -> btPermissionLauncher.launch(needed))
+                        .setCancelable(false)
+                        .show();
+                });
+                return;
+            }
+        }
+        if (btAdapter == null) {
+            runOnUiThread(() -> Toast.makeText(this, "此设备不支持蓝牙", Toast.LENGTH_LONG).show());
             return;
         }
-        if (Build.VERSION.SDK_INT >= 31 && ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "需要蓝牙权限", Toast.LENGTH_SHORT).show();
+        if (!btAdapter.isEnabled()) {
+            runOnUiThread(() -> {
+                new AlertDialog.Builder(this)
+                    .setTitle("蓝牙未开启")
+                    .setMessage("请先打开手机蓝牙，然后点重新连接。")
+                    .setPositiveButton("打开蓝牙设置", (d, w) -> {
+                        Intent intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("取消", null)
+                    .show();
+            });
             return;
         }
         startScan();
