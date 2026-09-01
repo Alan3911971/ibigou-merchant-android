@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import android.speech.tts.TextToSpeech;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "IbigouMain";
@@ -50,6 +51,7 @@ public class MainActivity extends AppCompatActivity {
     private final Map<String, BluetoothDevice> discoveredDevices = new HashMap<>();
     private BroadcastReceiver discoveryReceiver;
     private BluetoothAdapter btAdapter;
+    private NativeTTS nativeTTS;
     private final ActivityResultLauncher<String[]> btPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(), result -> {});
 
@@ -59,6 +61,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         requestBtPermissions();
+        nativeTTS = new NativeTTS(this);
         BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         if (bm != null) btAdapter = bm.getAdapter();
         webView = findViewById(R.id.webView);
@@ -127,6 +130,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         stopScan();
         disconnectBt();
+        if (nativeTTS != null) nativeTTS.shutdown();
         super.onDestroy();
     }
 
@@ -365,6 +369,10 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public boolean isConnected() { return btSocket != null && btSocket.isConnected() && btOut != null; }
         @JavascriptInterface public void disconnect() { disconnectBt(); }
         @JavascriptInterface public String getConnectedDeviceName() { return btDeviceName; }
+        @JavascriptInterface public void speak(String text) {
+            if (nativeTTS != null) nativeTTS.speak(text);
+        }
+        @JavascriptInterface public boolean isTtsReady() { return nativeTTS != null && nativeTTS.isReady(); }
     }
 
     private String err(String msg) {
