@@ -100,9 +100,8 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
     public void speakUrl(String url) {
         mainHandler.post(() -> {
             try {
-                if (url != null && url.startsWith("/")) {
-                    url = BASE_URL + url;
-                }
+                final String playUrl = (url != null && url.startsWith("/"))
+                        ? BASE_URL + url : url;
                 if (mediaPlayer != null) {
                     try { mediaPlayer.release(); } catch (Exception ignored) {}
                     mediaPlayer = null;
@@ -114,16 +113,15 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                         .build()
                 );
-                mediaPlayer.setDataSource(url);
+                mediaPlayer.setDataSource(playUrl);
                 mediaPlayer.setOnPreparedListener(mp -> {
                     mp.start();
-                    Log.i(TAG, "MediaPlayer started: " + url);
+                    Log.i(TAG, "MediaPlayer started: " + playUrl);
                 });
                 mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                    Log.e(TAG, "MediaPlayer error: what=" + what + " extra=" + extra + " url=" + url);
+                    Log.e(TAG, "MediaPlayer error: what=" + what + " extra=" + extra + " url=" + playUrl);
                     try { mp.release(); } catch (Exception ignored) {}
                     mediaPlayer = null;
-                    // Fallback to system TTS
                     // cloud TTS failed; leave to JS-level fallback (Web Speech API)
                     return true;
                 });
@@ -132,7 +130,7 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                     mediaPlayer = null;
                 });
                 mediaPlayer.prepareAsync();
-                Log.i(TAG, "MediaPlayer preparing: " + url);
+                Log.i(TAG, "MediaPlayer preparing: " + playUrl);
             } catch (Exception e) {
                 Log.e(TAG, "speakUrl failed", e);
             }
@@ -183,3 +181,4 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
         ready = false;
     }
 }
+
