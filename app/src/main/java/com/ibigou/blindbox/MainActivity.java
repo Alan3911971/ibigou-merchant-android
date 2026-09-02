@@ -372,6 +372,9 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void speak(String text) {
             if (nativeTTS != null) nativeTTS.speak(text);
         }
+        @JavascriptInterface public void speakUrl(String url) {
+            if (nativeTTS != null) nativeTTS.speakUrl(url);
+        }
         @JavascriptInterface public boolean isTtsReady() { return nativeTTS != null && nativeTTS.isReady(); }
     }
 
