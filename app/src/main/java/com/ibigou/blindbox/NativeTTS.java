@@ -52,22 +52,22 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
             }
             ready = true;
             Log.i(TAG, "TTS ready, lang=" + langResult);
-            toast("TTS ready, lang=" + langResult);
+            // toast removed: TTS ready
         } else {
             Log.e(TAG, "TTS init failed: " + status);
-            toast("TTS init failed: " + status);
+            // toast removed: TTS init failed
         }
     }
 
     public int speak(String text) {
         if (tts == null) {
-            toast("TTS engine null, playing fallback");
+            // toast removed: engine null
             playFallbackSound();
             return -1;
         }
 
         if (!ready) {
-            toast("TTS not ready (init=" + initStatus + "), playing fallback");
+            // toast removed: not ready
             playFallbackSound();
             return -2;
         }
@@ -86,7 +86,7 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
         int result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null,
             "ibigou_tts_" + System.currentTimeMillis());
         Log.i(TAG, "speak result=" + result + " ready=" + ready + " lang=" + langResult);
-        toast("TTS speak=" + result + " ready=" + ready + " lang=" + langResult);
+        // toast removed: speak result
 
         if (result != TextToSpeech.SUCCESS) {
             playFallbackSound();
@@ -161,7 +161,7 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                 context.startActivity(intent);
             } catch (Exception e) {
                 Log.e(TAG, "installTtsData failed", e);
-                toast("Cannot open TTS install page");
+                // toast removed: cannot open install page
             }
         });
     }
