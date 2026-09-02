@@ -96,9 +96,13 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
 
     // Play TTS audio from URL (e.g. Baidu TTS female voice)
     private MediaPlayer mediaPlayer;
+    private static final String BASE_URL = "https://ybgtc.com";
     public void speakUrl(String url) {
         mainHandler.post(() -> {
             try {
+                if (url != null && url.startsWith("/")) {
+                    url = BASE_URL + url;
+                }
                 if (mediaPlayer != null) {
                     try { mediaPlayer.release(); } catch (Exception ignored) {}
                     mediaPlayer = null;
@@ -116,11 +120,11 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                     Log.i(TAG, "MediaPlayer started: " + url);
                 });
                 mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                    Log.e(TAG, "MediaPlayer error: " + what + " " + extra);
+                    Log.e(TAG, "MediaPlayer error: what=" + what + " extra=" + extra + " url=" + url);
                     try { mp.release(); } catch (Exception ignored) {}
                     mediaPlayer = null;
                     // Fallback to system TTS
-                    speak(context.toString()); // fallback
+                    // cloud TTS failed; leave to JS-level fallback (Web Speech API)
                     return true;
                 });
                 mediaPlayer.setOnCompletionListener(mp -> {
