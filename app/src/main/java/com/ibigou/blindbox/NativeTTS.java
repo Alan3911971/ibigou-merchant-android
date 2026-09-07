@@ -122,7 +122,8 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                     Log.e(TAG, "MediaPlayer error: what=" + what + " extra=" + extra + " url=" + playUrl);
                     try { mp.release(); } catch (Exception ignored) {}
                     mediaPlayer = null;
-                    // cloud TTS failed; leave to JS-level fallback (Web Speech API)
+                    // 云端TTS失败：自动回退系统TTS（保证有声音）
+                    fallbackToSystemTts(url);
                     return true;
                 });
                 mediaPlayer.setOnCompletionListener(mp -> {
@@ -133,8 +134,35 @@ public class NativeTTS implements TextToSpeech.OnInitListener {
                 Log.i(TAG, "MediaPlayer preparing: " + playUrl);
             } catch (Exception e) {
                 Log.e(TAG, "speakUrl failed", e);
+                // 初始化异常：回退系统TTS
+                fallbackToSystemTts(url);
             }
         });
+    }
+
+    // 云端TTS失败回退：从URL解析text参数，用系统TTS朗读
+    private void fallbackToSystemTts(String url) {
+        String text = extractTextFromUrl(url);
+        if (text != null && !text.isEmpty()) {
+            Log.i(TAG, "云端TTS失败，回退系统TTS: " + text);
+            speak(text);
+        } else {
+            playFallbackSound();
+        }
+    }
+
+    private String extractTextFromUrl(String url) {
+        try {
+            if (url == null) return null;
+            int i = url.indexOf("text=");
+            if (i < 0) return null;
+            String s = url.substring(i + 5);
+            int j = s.indexOf('&');
+            if (j >= 0) s = s.substring(0, j);
+            return java.net.URLDecoder.decode(s, "UTF-8");
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private void playFallbackSound() {
