@@ -363,23 +363,42 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String printQR(String url, String shopName) {
             try {
                 if (btOut == null) return err("not connected");
-                btOut.write(buildEscPosQR(url, shopName)); btOut.flush();
+                // 先打印文字确认打印机正常
+                btOut.write("QR CODE TEST".getBytes("US-ASCII"));
+                btOut.write(0x0A);
+                btOut.write(url.getBytes("US-ASCII"));
+                btOut.write(0x0A);
+                btOut.write(0x0A);
+                // 再打印二维码
+                byte[] qrData = buildEscPosQR(url, shopName);
+                btOut.write(qrData);
+                btOut.flush();
+                Log.d(TAG, "printQR sent " + qrData.length + " bytes");
                 JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "ok");
                 return res.toString();
-            } catch (Exception e) { return err(e.getMessage()); }
+            } catch (Exception e) {
+                Log.e(TAG, "printQR error", e);
+                return err(e.getMessage());
+            }
         }
         @JavascriptInterface public String printText(String text) {
             try {
                 if (btOut == null) return err("not connected");
-                btOut.write(new byte[]{0x1B, 0x40});  // ESC @ init
-                btOut.write(new byte[]{0x1B, 0x61, 0x00});  // ESC a left align
-                btOut.write(text.getBytes("GBK"));
+                // 方式1: 最简单 - 只发ASCII文字+换行
+                byte[] ascii = text.getBytes("US-ASCII");
+                btOut.write(ascii);
+                btOut.write(0x0D);  // CR
+                btOut.write(0x0A);  // LF
                 btOut.write(0x0A);
-                btOut.write(new byte[]{0x1B, 0x64, 0x02});  // feed 2
+                btOut.write(0x0A);
                 btOut.flush();
+                Log.d(TAG, "printText sent " + ascii.length + " bytes: " + new String(ascii));
                 JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "ok");
                 return res.toString();
-            } catch (Exception e) { return err(e.getMessage()); }
+            } catch (Exception e) {
+                Log.e(TAG, "printText error", e);
+                return err(e.getMessage());
+            }
         }
         @JavascriptInterface public boolean isConnected() { return btSocket != null && btSocket.isConnected() && btOut != null; }
         @JavascriptInterface public void disconnect() { disconnectBt(); }
