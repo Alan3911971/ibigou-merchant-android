@@ -473,52 +473,76 @@ public class MainActivity extends AppCompatActivity {
                 if (btOut == null) return err("not connected");
                 StringBuilder debug = new StringBuilder();
 
-                // 连接后等待一下
-                Thread.sleep(500);
+                Thread.sleep(300);
 
-                // 方式1: 最简单 - 只发纯文字+换行，不发任何控制指令
+                // 测试1: 打印全黑测试行（80mm打印机约576点=72字节）
                 try {
-                    byte[] data = (text + "\n\n\n\n").getBytes("US-ASCII");
-                    btOut.write(data);
-                    btOut.flush();
-                    Thread.sleep(500);
-                    debug.append("方式1发送").append(data.length).append("字节;");
-                    Log.d(TAG, "printText 方式1 sent " + data.length + " bytes");
-                } catch (Exception e) {
-                    debug.append("方式1失败:").append(e.getMessage()).append(";");
-                    Log.e(TAG, "printText 方式1失败", e);
-                }
-
-                // 方式2: ESC @初始化 + 文字
-                try {
-                    btOut.write(new byte[]{0x1B, 0x40});
-                    btOut.flush();
-                    Thread.sleep(200);
-                    btOut.write(text.getBytes("US-ASCII"));
-                    btOut.write(0x0A);
+                    // ESC * 打印位图: 0x1B 0x2A m nL nH data
+                    // m=0 (8点单密度), nL=72, nH=0, 72字节全0xFF
+                    byte[] bitmapCmd = new byte[72 + 5];
+                    bitmapCmd[0] = 0x1B;
+                    bitmapCmd[1] = 0x2A;
+                    bitmapCmd[2] = 0x00;  // m=0
+                    bitmapCmd[3] = 72;    // nL
+                    bitmapCmd[4] = 0x00;  // nH
+                    for (int i = 5; i < bitmapCmd.length; i++) {
+                        bitmapCmd[i] = (byte) 0xFF;  // 全黑
+                    }
+                    btOut.write(bitmapCmd);
                     btOut.write(0x0A);
                     btOut.write(0x0A);
                     btOut.flush();
                     Thread.sleep(500);
-                    debug.append("方式2发送成功;");
+                    debug.append("测试1位图发送").append(bitmapCmd.length).append("字节;");
                 } catch (Exception e) {
-                    debug.append("方式2失败:").append(e.getMessage()).append(";");
+                    debug.append("测试1失败:").append(e.getMessage()).append(";");
                 }
 
-                // 方式3: 尝试读取打印机响应
+                // 测试2: 用GBK编码打印中文
+                try {
+                    btOut.write(new byte[]{0x1B, 0x40});  // ESC @ init
+                    btOut.flush();
+                    Thread.sleep(100);
+                    btOut.write(new byte[]{0x1C, 0x26});  // FS & 进入中文模式
+                    btOut.flush();
+                    Thread.sleep(100);
+                    byte[] gbk = ("测试中文打印" + text).getBytes("GBK");
+                    btOut.write(gbk);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(500);
+                    debug.append("测试2GBK发送").append(gbk.length).append("字节;");
+                } catch (Exception e) {
+                    debug.append("测试2失败:").append(e.getMessage()).append(";");
+                }
+
+                // 测试3: 纯ASCII大写字母（最不可能有编码问题）
+                try {
+                    String asciiText = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789";
+                    byte[] ascii = asciiText.getBytes("US-ASCII");
+                    btOut.write(ascii);
+                    btOut.write(0x0D);
+                    btOut.write(0x0A);
+                    btOut.write(0x0D);
+                    btOut.write(0x0A);
+                    btOut.write(0x0D);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(500);
+                    debug.append("测试3ASCII发送").append(ascii.length).append("字节;");
+                } catch (Exception e) {
+                    debug.append("测试3失败:").append(e.getMessage()).append(";");
+                }
+
+                // 读取输入流
                 try {
                     java.io.InputStream in = btSocket.getInputStream();
                     int available = in.available();
-                    debug.append("输入流可用:").append(available).append("字节;");
-                    if (available > 0) {
-                        byte[] resp = new byte[available];
-                        in.read(resp);
-                        StringBuilder sb = new StringBuilder();
-                        for (byte b : resp) sb.append(String.format("%02X ", b));
-                        debug.append("响应:").append(sb.toString()).append(";");
-                    }
+                    debug.append("输入流:").append(available).append("字节;");
                 } catch (Exception e) {
-                    debug.append("读取响应失败:").append(e.getMessage()).append(";");
+                    debug.append("输入流失败:").append(e.getMessage()).append(";");
                 }
 
                 JSONObject res = new JSONObject();
