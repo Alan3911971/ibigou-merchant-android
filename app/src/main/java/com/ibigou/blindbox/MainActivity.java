@@ -263,10 +263,72 @@ public class MainActivity extends AppCompatActivity {
                 }
                 mainHandler.post(() -> Toast.makeText(this, "正在连接...", Toast.LENGTH_SHORT).show());
                 btAdapter.cancelDiscovery();
-                btSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                btSocket.connect();
+
+                // 尝试多种连接方式
+                BluetoothSocket socket = null;
+                Exception lastError = null;
+
+                // 方式1: 标准SPP连接
+                try {
+                    Log.d(TAG, "尝试方式1: createRfcommSocketToServiceRecord");
+                    socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                    socket.connect();
+                    Log.d(TAG, "方式1成功");
+                } catch (Exception e) {
+                    lastError = e;
+                    Log.e(TAG, "方式1失败: " + e.getMessage());
+                    try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                    socket = null;
+                }
+
+                // 方式2: 不安全SPP连接
+                if (socket == null) {
+                    try {
+                        Log.d(TAG, "尝试方式2: createInsecureRfcommSocketToServiceRecord");
+                        socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                        socket.connect();
+                        Log.d(TAG, "方式2成功");
+                    } catch (Exception e) {
+                        lastError = e;
+                        Log.e(TAG, "方式2失败: " + e.getMessage());
+                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                        socket = null;
+                    }
+                }
+
+                // 方式3: 反射调用createRfcommSocket(端口1)
+                if (socket == null) {
+                    try {
+                        Log.d(TAG, "尝试方式3: 反射 createRfcommSocket(1)");
+                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                        socket = (BluetoothSocket) m.invoke(device, 1);
+                        socket.connect();
+                        Log.d(TAG, "方式3成功");
+                    } catch (Exception e) {
+                        lastError = e;
+                        Log.e(TAG, "方式3失败: " + e.getMessage());
+                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                        socket = null;
+                    }
+                }
+
+                if (socket == null) {
+                    throw lastError != null ? lastError : new Exception("所有连接方式都失败");
+                }
+
+                btSocket = socket;
                 btOut = btSocket.getOutputStream();
                 btDeviceName = device.getName();
+
+                // 连接成功后发送初始化指令
+                try {
+                    btOut.write(new byte[]{0x1B, 0x40});  // ESC @ 初始化打印机
+                    btOut.flush();
+                    Thread.sleep(100);
+                } catch (Exception e) {
+                    Log.e(TAG, "发送初始化指令失败", e);
+                }
+
                 mainHandler.post(() -> {
                     Toast.makeText(this, "✅ 已连接: " + btDeviceName, Toast.LENGTH_LONG).show();
                     webView.post(() -> webView.evaluateJavascript("if(window._onBtConnected)window._onBtConnected('" + btDeviceName + "');", null));
@@ -384,15 +446,18 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String printText(String text) {
             try {
                 if (btOut == null) return err("not connected");
-                // 方式1: 最简单 - 只发ASCII文字+换行
+                // 发送ESC @初始化
+                btOut.write(new byte[]{0x1B, 0x40});
+                btOut.flush();
+                Thread.sleep(50);
+                // 发送文字
                 byte[] ascii = text.getBytes("US-ASCII");
                 btOut.write(ascii);
-                btOut.write(0x0D);  // CR
-                btOut.write(0x0A);  // LF
+                btOut.write(0x0A);
                 btOut.write(0x0A);
                 btOut.write(0x0A);
                 btOut.flush();
-                Log.d(TAG, "printText sent " + ascii.length + " bytes: " + new String(ascii));
+                Log.d(TAG, "printText sent " + ascii.length + " bytes");
                 JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "ok");
                 return res.toString();
             } catch (Exception e) {
