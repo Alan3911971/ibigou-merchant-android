@@ -320,11 +320,19 @@ public class MainActivity extends AppCompatActivity {
                 btOut = btSocket.getOutputStream();
                 btDeviceName = device.getName();
 
-                // 连接成功后发送初始化指令
+                // 连接成功后发送完整初始化指令
                 try {
                     btOut.write(new byte[]{0x1B, 0x40});  // ESC @ 初始化打印机
                     btOut.flush();
-                    Thread.sleep(100);
+                    Thread.sleep(200);
+                    // 发送测试文字确认连接
+                    btOut.write("PRINTER CONNECTED".getBytes("US-ASCII"));
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(200);
+                    Log.d(TAG, "连接初始化完成，已发送测试文字");
                 } catch (Exception e) {
                     Log.e(TAG, "发送初始化指令失败", e);
                 }
@@ -446,19 +454,67 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String printText(String text) {
             try {
                 if (btOut == null) return err("not connected");
-                // 发送ESC @初始化
-                btOut.write(new byte[]{0x1B, 0x40});
-                btOut.flush();
-                Thread.sleep(50);
-                // 发送文字
-                byte[] ascii = text.getBytes("US-ASCII");
-                btOut.write(ascii);
-                btOut.write(0x0A);
-                btOut.write(0x0A);
-                btOut.write(0x0A);
-                btOut.flush();
-                Log.d(TAG, "printText sent " + ascii.length + " bytes");
-                JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "ok");
+                StringBuilder debug = new StringBuilder();
+
+                // 方式1: ESC @ 初始化 + ASCII文字 + LF
+                try {
+                    btOut.write(new byte[]{0x1B, 0x40});
+                    btOut.flush();
+                    Thread.sleep(100);
+                    byte[] ascii = text.getBytes("US-ASCII");
+                    btOut.write(ascii);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(200);
+                    debug.append("方式1发送").append(ascii.length).append("字节;");
+                    Log.d(TAG, "printText 方式1 sent " + ascii.length + " bytes");
+                } catch (Exception e) {
+                    debug.append("方式1失败:").append(e.getMessage()).append(";");
+                    Log.e(TAG, "printText 方式1失败", e);
+                }
+
+                // 方式2: 尝试GBK编码
+                try {
+                    byte[] gbk = text.getBytes("GBK");
+                    btOut.write(gbk);
+                    btOut.write(0x0D);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(200);
+                    debug.append("方式2发送").append(gbk.length).append("字节;");
+                    Log.d(TAG, "printText 方式2 sent " + gbk.length + " bytes");
+                } catch (Exception e) {
+                    debug.append("方式2失败:").append(e.getMessage()).append(";");
+                    Log.e(TAG, "printText 方式2失败", e);
+                }
+
+                // 方式3: 发送完整ESC/POS测试指令
+                try {
+                    byte[] test = new byte[]{
+                        0x1B, 0x40,             // ESC @ init
+                        0x1B, 0x21, 0x00,       // GS ! normal size
+                        0x1B, 0x45, 0x00,       // ESC E bold off
+                        0x1B, 0x61, 0x00,       // ESC a left align
+                    };
+                    btOut.write(test);
+                    btOut.write("TEST PRINT OK".getBytes("US-ASCII"));
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.write(new byte[]{0x1B, 0x64, 0x03});  // feed 3
+                    btOut.flush();
+                    debug.append("方式3测试页发送;");
+                    Log.d(TAG, "printText 方式3 测试页发送");
+                } catch (Exception e) {
+                    debug.append("方式3失败:").append(e.getMessage()).append(";");
+                    Log.e(TAG, "printText 方式3失败", e);
+                }
+
+                JSONObject res = new JSONObject();
+                res.put("code", 0);
+                res.put("msg", "ok");
+                res.put("debug", debug.toString());
                 return res.toString();
             } catch (Exception e) {
                 Log.e(TAG, "printText error", e);
