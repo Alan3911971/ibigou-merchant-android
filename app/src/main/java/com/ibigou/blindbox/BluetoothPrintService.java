@@ -81,8 +81,11 @@ public class BluetoothPrintService {
     public boolean printText(String text) {
         if (!isConnected()) return false;
         try {
+            out.write(new byte[]{0x1B, 0x40});  // ESC @ init
+            out.write(new byte[]{0x1B, 0x61, 0x00});  // left align
             out.write(text.getBytes("GBK"));
             out.write(0x0A);
+            out.write(new byte[]{0x1B, 0x64, 0x02});  // feed 2
             out.flush();
             return true;
         } catch (Exception e) {
@@ -93,40 +96,39 @@ public class BluetoothPrintService {
 
     // === ESC/POS QR command builder ===
     private byte[] buildEscPosQR(String url, String shopName) {
-        byte[] urlBytes = url.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        byte[] nameBytes = (shopName != null && !shopName.isEmpty())
-                ? shopName.getBytes(java.nio.charset.StandardCharsets.UTF_8) : null;
-        byte[] footer = "\u626b\u7801\u5f00\u76f2\u76d2 \u00b7 \u5b9c\u5fc5\u8d2d"
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
-
-        java.util.List<byte[]> parts = new java.util.ArrayList<>();
-        parts.add(new byte[]{0x1B, 0x40});                                    // ESC @ init
-        parts.add(new byte[]{0x1B, 0x61, 0x01});                               // ESC a center
-        parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x31, 0x06}); // QR module size 6
-        parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x32, 0x31}); // QR error level M
-        int dl = urlBytes.length + 3;
-        parts.add(new byte[]{0x1D, 0x28, 0x6B, (byte)(dl & 0xFF), (byte)((dl >> 8) & 0xFF), 0x31, 0x31, 0x30});
-        parts.add(urlBytes);                                                   // QR data
-        parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x32, 0x00});  // print QR
-        parts.add(new byte[]{0x1B, 0x64, 0x02});                               // feed 2
-
-        if (nameBytes != null) {
-            parts.add(nameBytes);
+        try {
+            byte[] urlBytes = url.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] nameBytes = (shopName != null && !shopName.isEmpty())
+                    ? shopName.getBytes("GBK") : null;
+            byte[] footer = "\u626b\u7801\u5f00\u76f2\u76d2 \u00b7 \u5b9c\u5fc5\u8d2d".getBytes("GBK");
+            java.util.List<byte[]> parts = new java.util.ArrayList<>();
+            parts.add(new byte[]{0x1B, 0x40});                                    // ESC @ init
+            parts.add(new byte[]{0x1B, 0x61, 0x01});                               // ESC a center
+            parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, 0x08}); // module size 8
+            parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x30}); // error level L
+            int dataLen = urlBytes.length + 3;
+            parts.add(new byte[]{0x1D, 0x28, 0x6B, (byte)(dataLen & 0xFF), (byte)((dataLen >> 8) & 0xFF), 0x31, 0x50, 0x30});
+            parts.add(new byte[]{0x31, 0x32, 0x30});                               // QR model 2
+            parts.add(urlBytes);                                                   // QR data
+            parts.add(new byte[]{0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30}); // print QR
+            parts.add(new byte[]{0x1B, 0x64, 0x02});                               // feed 2
+            if (nameBytes != null) { parts.add(nameBytes); parts.add(new byte[]{0x0A}); }
+            parts.add(footer);
             parts.add(new byte[]{0x0A});
+            parts.add(new byte[]{0x1B, 0x64, 0x03});                               // feed 3
+            parts.add(new byte[]{0x1D, 0x56, 0x00});                               // cut paper
+            int total = 0;
+            for (byte[] p : parts) total += p.length;
+            byte[] result = new byte[total];
+            int pos = 0;
+            for (byte[] p : parts) {
+                System.arraycopy(p, 0, result, pos, p.length);
+                pos += p.length;
+            }
+            return result;
+        } catch (Exception e) {
+            Log.e(TAG, "buildEscPosQR error", e);
+            return new byte[]{0x1B, 0x40, 0x0A, 0x0A, 0x0A};
         }
-        parts.add(footer);
-        parts.add(new byte[]{0x0A});
-        parts.add(new byte[]{0x1B, 0x64, 0x03});                               // feed 3
-        parts.add(new byte[]{0x1D, 0x56, 0x00});                               // cut paper
-
-        int total = 0;
-        for (byte[] p : parts) total += p.length;
-        byte[] result = new byte[total];
-        int pos = 0;
-        for (byte[] p : parts) {
-            System.arraycopy(p, 0, result, pos, p.length);
-            pos += p.length;
-        }
-        return result;
     }
 }
