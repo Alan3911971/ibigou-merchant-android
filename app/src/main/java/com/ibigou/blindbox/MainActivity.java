@@ -341,30 +341,16 @@ public class MainActivity extends AppCompatActivity {
                 btOut = btSocket.getOutputStream();
                 btDeviceName = device.getName();
 
-                // 连接成功后发送完整初始化和测试文字
+                // 连接成功后等待，然后发送最简单的测试文字
                 try {
-                    java.io.PrintWriter pw = new java.io.PrintWriter(btOut, true);
-                    pw.print("\u001B@");  // ESC @
-                    pw.flush();
-                    Thread.sleep(200);
-                    pw.println("=== PRINTER CONNECTED ===");
-                    pw.println("DP80S TEST PAGE");
-                    pw.println("");
-                    pw.println("");
-                    pw.println("");
-                    pw.flush();
-                    Thread.sleep(300);
+                    Thread.sleep(1000);  // 等待连接稳定
+                    // 只发纯文字+换行，不发任何控制指令
+                    btOut.write("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
+                    btOut.flush();
+                    Thread.sleep(500);
                     Log.d(TAG, "连接初始化完成，已发送测试文字");
                 } catch (Exception e) {
-                    Log.e(TAG, "发送初始化指令失败", e);
-                    // 备用：直接用OutputStream
-                    try {
-                        btOut.write(new byte[]{0x1B, 0x40});
-                        btOut.write("PRINTER CONNECTED\n\n\n".getBytes("US-ASCII"));
-                        btOut.flush();
-                    } catch (Exception e2) {
-                        Log.e(TAG, "备用初始化也失败", e2);
-                    }
+                    Log.e(TAG, "发送测试文字失败", e);
                 }
 
                 final String finalMethod = connectMethod;
@@ -487,54 +473,52 @@ public class MainActivity extends AppCompatActivity {
                 if (btOut == null) return err("not connected");
                 StringBuilder debug = new StringBuilder();
 
-                // 先查询打印机状态
+                // 连接后等待一下
+                Thread.sleep(500);
+
+                // 方式1: 最简单 - 只发纯文字+换行，不发任何控制指令
                 try {
-                    java.io.InputStream in = btSocket.getInputStream();
-                    btOut.write(new byte[]{0x10, 0x04, 0x01});
+                    byte[] data = (text + "\n\n\n\n").getBytes("US-ASCII");
+                    btOut.write(data);
                     btOut.flush();
-                    Thread.sleep(300);
-                    if (in.available() > 0) {
-                        byte[] status = new byte[in.available()];
-                        in.read(status);
-                        StringBuilder sb = new StringBuilder();
-                        for (byte b : status) sb.append(String.format("%02X ", b));
-                        debug.append("打印机状态:").append(sb.toString()).append(";");
-                    } else {
-                        debug.append("打印机无响应;");
-                    }
+                    Thread.sleep(500);
+                    debug.append("方式1发送").append(data.length).append("字节;");
+                    Log.d(TAG, "printText 方式1 sent " + data.length + " bytes");
                 } catch (Exception e) {
-                    debug.append("状态查询失败:").append(e.getMessage()).append(";");
+                    debug.append("方式1失败:").append(e.getMessage()).append(";");
+                    Log.e(TAG, "printText 方式1失败", e);
                 }
 
-                // 方式1: PrintWriter
-                try {
-                    java.io.PrintWriter pw = new java.io.PrintWriter(btOut, true);
-                    pw.print("\u001B@");
-                    pw.flush();
-                    Thread.sleep(100);
-                    pw.println(text);
-                    pw.println("--- PRINT TEST ---");
-                    pw.println("");
-                    pw.println("");
-                    pw.flush();
-                    Thread.sleep(200);
-                    debug.append("PrintWriter成功;");
-                } catch (Exception e) {
-                    debug.append("PrintWriter失败:").append(e.getMessage()).append(";");
-                }
-
-                // 方式2: OutputStream原始字节
+                // 方式2: ESC @初始化 + 文字
                 try {
                     btOut.write(new byte[]{0x1B, 0x40});
                     btOut.flush();
-                    Thread.sleep(100);
-                    byte[] data = (text + "\n\n\n").getBytes("US-ASCII");
-                    btOut.write(data);
-                    btOut.flush();
                     Thread.sleep(200);
-                    debug.append("OutputStream发送").append(data.length).append("字节;");
+                    btOut.write(text.getBytes("US-ASCII"));
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.write(0x0A);
+                    btOut.flush();
+                    Thread.sleep(500);
+                    debug.append("方式2发送成功;");
                 } catch (Exception e) {
-                    debug.append("OutputStream失败:").append(e.getMessage()).append(";");
+                    debug.append("方式2失败:").append(e.getMessage()).append(";");
+                }
+
+                // 方式3: 尝试读取打印机响应
+                try {
+                    java.io.InputStream in = btSocket.getInputStream();
+                    int available = in.available();
+                    debug.append("输入流可用:").append(available).append("字节;");
+                    if (available > 0) {
+                        byte[] resp = new byte[available];
+                        in.read(resp);
+                        StringBuilder sb = new StringBuilder();
+                        for (byte b : resp) sb.append(String.format("%02X ", b));
+                        debug.append("响应:").append(sb.toString()).append(";");
+                    }
+                } catch (Exception e) {
+                    debug.append("读取响应失败:").append(e.getMessage()).append(";");
                 }
 
                 JSONObject res = new JSONObject();
