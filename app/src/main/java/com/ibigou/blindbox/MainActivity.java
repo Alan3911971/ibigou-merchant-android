@@ -264,19 +264,22 @@ public class MainActivity extends AppCompatActivity {
                 mainHandler.post(() -> Toast.makeText(this, "正在连接...", Toast.LENGTH_SHORT).show());
                 btAdapter.cancelDiscovery();
 
-                // 尝试多种连接方式
+                // 尝试多种连接方式（优先反射方式，很多热敏打印机需要这个）
                 BluetoothSocket socket = null;
                 Exception lastError = null;
+                String connectMethod = "";
 
-                // 方式1: 标准SPP连接
+                // 方式1: 反射调用createRfcommSocket(端口1) - 很多便宜热敏打印机需要这个
                 try {
-                    Log.d(TAG, "尝试方式1: createRfcommSocketToServiceRecord");
-                    socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                    Log.d(TAG, "尝试方式1: 反射 createRfcommSocket(1)");
+                    java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                    socket = (BluetoothSocket) m.invoke(device, 1);
                     socket.connect();
-                    Log.d(TAG, "方式1成功");
+                    connectMethod = "反射端口1";
+                    Log.d(TAG, "方式1(反射端口1)成功");
                 } catch (Exception e) {
                     lastError = e;
-                    Log.e(TAG, "方式1失败: " + e.getMessage());
+                    Log.e(TAG, "方式1(反射端口1)失败: " + e.getMessage());
                     try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                     socket = null;
                 }
@@ -287,26 +290,44 @@ public class MainActivity extends AppCompatActivity {
                         Log.d(TAG, "尝试方式2: createInsecureRfcommSocketToServiceRecord");
                         socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
                         socket.connect();
-                        Log.d(TAG, "方式2成功");
+                        connectMethod = "不安全SPP";
+                        Log.d(TAG, "方式2(不安全SPP)成功");
                     } catch (Exception e) {
                         lastError = e;
-                        Log.e(TAG, "方式2失败: " + e.getMessage());
+                        Log.e(TAG, "方式2(不安全SPP)失败: " + e.getMessage());
                         try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                         socket = null;
                     }
                 }
 
-                // 方式3: 反射调用createRfcommSocket(端口1)
+                // 方式3: 标准SPP连接
                 if (socket == null) {
                     try {
-                        Log.d(TAG, "尝试方式3: 反射 createRfcommSocket(1)");
-                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-                        socket = (BluetoothSocket) m.invoke(device, 1);
+                        Log.d(TAG, "尝试方式3: createRfcommSocketToServiceRecord");
+                        socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
                         socket.connect();
-                        Log.d(TAG, "方式3成功");
+                        connectMethod = "标准SPP";
+                        Log.d(TAG, "方式3(标准SPP)成功");
                     } catch (Exception e) {
                         lastError = e;
-                        Log.e(TAG, "方式3失败: " + e.getMessage());
+                        Log.e(TAG, "方式3(标准SPP)失败: " + e.getMessage());
+                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                        socket = null;
+                    }
+                }
+
+                // 方式4: 反射调用createRfcommSocket(端口2)
+                if (socket == null) {
+                    try {
+                        Log.d(TAG, "尝试方式4: 反射 createRfcommSocket(2)");
+                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                        socket = (BluetoothSocket) m.invoke(device, 2);
+                        socket.connect();
+                        connectMethod = "反射端口2";
+                        Log.d(TAG, "方式4(反射端口2)成功");
+                    } catch (Exception e) {
+                        lastError = e;
+                        Log.e(TAG, "方式4(反射端口2)失败: " + e.getMessage());
                         try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                         socket = null;
                     }
@@ -346,8 +367,9 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
+                final String finalMethod = connectMethod;
                 mainHandler.post(() -> {
-                    Toast.makeText(this, "✅ 已连接: " + btDeviceName, Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "✅ 已连接(" + finalMethod + "): " + btDeviceName, Toast.LENGTH_LONG).show();
                     webView.post(() -> webView.evaluateJavascript("if(window._onBtConnected)window._onBtConnected('" + btDeviceName + "');", null));
                 });
             } catch (Exception e) {
