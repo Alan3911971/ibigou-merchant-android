@@ -59,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
     private CountDownLatch bleConnectLatch;
     private CountDownLatch bleServiceLatch;
     private String btDeviceName;
+    private String connectMethod;
     private boolean btScanning = false;
     private final Map<String, BluetoothDevice> discoveredDevices = new HashMap<>();
     private BroadcastReceiver discoveryReceiver;
@@ -534,6 +535,7 @@ public class MainActivity extends AppCompatActivity {
                 debug.append("btGatt=").append(btGatt != null).append(";");
                 debug.append("btWriteChar=").append(btWriteChar != null).append(";");
                 debug.append("btSocket=").append(btSocket != null).append(";");
+                debug.append("连接方式=").append(connectMethod != null ? connectMethod : "unknown").append(";");
                 // 获取设备UUID
                 try {
                     android.os.Parcelable[] uuids = btSocket.getRemoteDevice().getUuids();
@@ -568,6 +570,25 @@ public class MainActivity extends AppCompatActivity {
                     btOut.write(data);
                     btOut.flush();
                     debug.append("SPP写入").append(data.length).append("字节;");
+                    
+                    // 读取打印机返回数据
+                    try {
+                        java.io.InputStream in = btSocket.getInputStream();
+                        int available = in.available();
+                        debug.append("可读字节=").append(available).append(";");
+                        if (available > 0) {
+                            byte[] resp = new byte[available];
+                            int read = in.read(resp);
+                            debug.append("读取=").append(read).append("字节;");
+                            StringBuilder hex = new StringBuilder();
+                            for (int i = 0; i < Math.min(read, 20); i++) {
+                                hex.append(String.format("%02X ", resp[i]));
+                            }
+                            debug.append("返回=").append(hex.toString()).append(";");
+                        }
+                    } catch (Exception e) {
+                        debug.append("读取失败:").append(e.getMessage()).append(";");
+                    }
                 } else {
                     debug.append("无可用输出通道;");
                 }
