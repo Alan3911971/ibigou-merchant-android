@@ -566,11 +566,62 @@ public class MainActivity extends AppCompatActivity {
                     debug.append("UUID获取失败:").append(e.getMessage()).append(";");
                 }
 
-                // 构建打印数据: CPCL指令集（标签打印机协议）
-                String cpcl = "! 0 200 200 300 1\r\n" +
-                              "TEXT 4 0 10 10 " + text + "\r\n" +
-                              "PRINT\r\n";
-                byte[] data = cpcl.getBytes("US-ASCII");
+                // 构建打印数据: ESC/POS位图打印（GS v 0指令）
+                int printWidth = 576;
+                int byteWidth = printWidth / 8;
+                android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(printWidth, 200, android.graphics.Bitmap.Config.ARGB_8888);
+                android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+                canvas.drawColor(android.graphics.Color.WHITE);
+                android.graphics.Paint paint = new android.graphics.Paint();
+                paint.setColor(android.graphics.Color.BLACK);
+                paint.setTextSize(32);
+                paint.setAntiAlias(false);
+                String[] lines = text.split("\\n");
+                float yPos = 40;
+                for (String line : lines) {
+                    canvas.drawText(line, 10, yPos, paint);
+                    yPos += 40;
+                }
+                paint.setStyle(android.graphics.Paint.Style.FILL);
+                canvas.drawRect(0, yPos+10, printWidth, yPos+20, paint);
+                int bmpHeight = bitmap.getHeight();
+                byte[] imageData = new byte[byteWidth * bmpHeight];
+                int[] pixels = new int[printWidth * bmpHeight];
+                bitmap.getPixels(pixels, 0, printWidth, 0, 0, printWidth, bmpHeight);
+                for (int row = 0; row < bmpHeight; row++) {
+                    for (int col = 0; col < byteWidth; col++) {
+                        byte b = 0;
+                        for (int bit = 0; bit < 8; bit++) {
+                            int px = col * 8 + bit;
+                            if (px < printWidth) {
+                                int pixel = pixels[row * printWidth + px];
+                                int r = (pixel >> 16) & 0xFF;
+                                int g = (pixel >> 8) & 0xFF;
+                                int bl = pixel & 0xFF;
+                                int gray = (r + g + bl) / 3;
+                                if (gray < 128) { b |= (1 << (7 - bit)); }
+                            }
+                        }
+                        imageData[row * byteWidth + col] = b;
+                    }
+                }
+                java.util.List<byte[]> parts = new ArrayList<>();
+                parts.add(new byte[]{0x1B, 0x40});
+                parts.add(new byte[]{0x1B, 0x61, 0x01});
+                byte[] gsCmd = new byte[8];
+                gsCmd[0] = 0x1D; gsCmd[1] = 0x76; gsCmd[2] = 0x30; gsCmd[3] = 0x00;
+                gsCmd[4] = (byte)(byteWidth & 0xFF); gsCmd[5] = (byte)((byteWidth >> 8) & 0xFF);
+                gsCmd[6] = (byte)(bmpHeight & 0xFF); gsCmd[7] = (byte)((bmpHeight >> 8) & 0xFF);
+                parts.add(gsCmd);
+                parts.add(imageData);
+                parts.add(new byte[]{0x1B, 0x64, 0x03});
+                parts.add(new byte[]{0x1D, 0x56, 0x00});
+                int total = 0;
+                for (byte[] p : parts) total += p.length;
+                byte[] data = new byte[total];
+                int pos = 0;
+                for (byte[] p : parts) { System.arraycopy(p, 0, data, pos, p.length); pos += p.length; }
+                debug.append("位图").append(printWidth).append("x").append(bmpHeight).append(";");
 
                 if (isBleConnection && btGatt != null && btWriteChar != null) {
                     // BLE写入
@@ -580,7 +631,7 @@ public class MainActivity extends AppCompatActivity {
                     // 经典蓝牙写入
                     btOut.write(data);
                     btOut.flush();
-                    debug.append("CPCL写入").append(data.length).append("字节;");
+                    debug.append("GSv0位图写入").append(data.length).append("字节;");
                     
                     // 读取打印机返回数据
                     try {
