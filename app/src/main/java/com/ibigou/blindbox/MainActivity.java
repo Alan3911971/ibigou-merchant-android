@@ -658,7 +658,7 @@ public class MainActivity extends AppCompatActivity {
         public void speak(String text) {
             try {
                 if (nativeTTS != null) {
-                    nativeTTS.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speak");
+                    nativeTTS.speak(text);
                 }
             } catch (Exception e) { Log.e(TAG, "speak error", e); }
         }
@@ -667,7 +667,7 @@ public class MainActivity extends AppCompatActivity {
         public void speakUrl(String url) {
             try {
                 if (nativeTTS != null) {
-                    nativeTTS.speak("播报", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speakUrl");
+                    nativeTTS.speak("播报");
                 }
             } catch (Exception e) { Log.e(TAG, "speakUrl error", e); }
         }
