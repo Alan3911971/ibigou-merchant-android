@@ -542,6 +542,10 @@ public class MainActivity extends AppCompatActivity {
             try {
                 if (!isConnected()) return err("not connected");
                 StringBuilder debug = new StringBuilder();
+                debug.append("isBle=").append(isBleConnection).append(";");
+                debug.append("btGatt=").append(btGatt != null).append(";");
+                debug.append("btWriteChar=").append(btWriteChar != null).append(";");
+                debug.append("btSocket=").append(btSocket != null).append(";");
 
                 // 构建打印数据: ESC @初始化 + GBK中文 + 换行
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
@@ -554,15 +558,17 @@ public class MainActivity extends AppCompatActivity {
                 baos.write(0x0A);
                 byte[] data = baos.toByteArray();
 
-                if (isBleConnection) {
+                if (isBleConnection && btGatt != null && btWriteChar != null) {
                     // BLE写入
                     bleWriteData(data);
                     debug.append("BLE写入").append(data.length).append("字节;");
-                } else {
+                } else if (btOut != null) {
                     // 经典蓝牙写入
                     btOut.write(data);
                     btOut.flush();
                     debug.append("SPP写入").append(data.length).append("字节;");
+                } else {
+                    debug.append("无可用输出通道;");
                 }
 
                 Thread.sleep(500);
