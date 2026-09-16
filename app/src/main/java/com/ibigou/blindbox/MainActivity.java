@@ -543,15 +543,57 @@ public class MainActivity extends AppCompatActivity {
 
     public class AndroidBridge {
         @android.webkit.JavascriptInterface
-        public String getBluetoothStatus() {
+        public boolean isAvailable() { return btAdapter != null; }
+
+        @android.webkit.JavascriptInterface
+        public boolean isBluetoothEnabled() { return btAdapter != null && btAdapter.isEnabled(); }
+
+        @android.webkit.JavascriptInterface
+        public boolean isConnected() { return btSocket != null && btSocket.isConnected(); }
+
+        @android.webkit.JavascriptInterface
+        public String getConnectedDeviceName() { return btDeviceName != null ? btDeviceName : ""; }
+
+        @android.webkit.JavascriptInterface
+        public boolean hasPermission() { return true; }
+
+        @android.webkit.JavascriptInterface
+        public void requestPermission() {}
+
+        @android.webkit.JavascriptInterface
+        public void openBluetoothSettings() {
+            startActivity(new Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS));
+        }
+
+        @android.webkit.JavascriptInterface
+        public void showDevicePicker() {
+            runOnUiThread(() -> startBluetoothScan());
+        }
+
+        @android.webkit.JavascriptInterface
+        public String connect() {
             try {
-                JSONObject o = new JSONObject();
-                o.put("isAvailable", btAdapter != null);
-                o.put("isBluetoothEnabled", btAdapter != null && btAdapter.isEnabled());
-                o.put("isConnected", btSocket != null && btSocket.isConnected());
-                o.put("deviceName", btDeviceName != null ? btDeviceName : "");
-                o.put("connectMethod", connectMethod != null ? connectMethod : "");
-                return o.toString();
+                if (btSocket != null && btSocket.isConnected()) {
+                    return "{\"code\":0,\"msg\":\"already connected\",\"device\":\"" + btDeviceName + "\"}";
+                }
+                if (btAdapter == null || !btAdapter.isEnabled()) {
+                    return err("Bluetooth not enabled");
+                }
+                // 尝试连接第一个已配对设备
+                java.util.Set<BluetoothDevice> paired = btAdapter.getBondedDevices();
+                if (paired != null && !paired.isEmpty()) {
+                    BluetoothDevice device = paired.iterator().next();
+                    connectToDevice(device);
+                    // 等待连接完成（最多3秒）
+                    for (int i = 0; i < 30; i++) {
+                        try { Thread.sleep(100); } catch (Exception ignored) {}
+                        if (btSocket != null && btSocket.isConnected()) break;
+                    }
+                    if (btSocket != null && btSocket.isConnected()) {
+                        return "{\"code\":0,\"msg\":\"connected\",\"device\":\"" + btDeviceName + "\",\"method\":\"" + connectMethod + "\"}";
+                    }
+                }
+                return err("No paired device or connection failed");
             } catch (Exception e) { return err(e.getMessage()); }
         }
 
@@ -566,6 +608,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 BluetoothDevice device = btAdapter.getRemoteDevice(mac);
                 connectToDevice(device);
+                for (int i = 0; i < 30; i++) {
+                    try { Thread.sleep(100); } catch (Exception ignored) {}
+                    if (btSocket != null && btSocket.isConnected()) break;
+                }
                 if (btSocket != null && btSocket.isConnected()) {
                     return "{\"code\":0,\"msg\":\"connected\",\"device\":\"" + btDeviceName + "\",\"method\":\"" + connectMethod + "\"}";
                 }
@@ -578,7 +624,6 @@ public class MainActivity extends AppCompatActivity {
             try {
                 if (btSocket != null) { btSocket.close(); btSocket = null; }
                 if (btOut != null) { btOut = null; }
-                
                 btDeviceName = null;
                 connectMethod = null;
                 return "{\"code\":0,\"msg\":\"disconnected\"}";
@@ -590,7 +635,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
                 byte[] data = text.getBytes("GBK");
-                btOut.write(new byte[]{0x1B, 0x40}); // ESC @ init
+                btOut.write(new byte[]{0x1B, 0x40});
                 btOut.write(data);
                 btOut.write(new byte[]{0x0A});
                 btOut.flush();
@@ -607,6 +652,24 @@ public class MainActivity extends AppCompatActivity {
                 btOut.flush();
                 return "{\"code\":0,\"msg\":\"ok\",\"bytes\":" + data.length + "}";
             } catch (Exception e) { return err(e.getMessage()); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public void speak(String text) {
+            try {
+                if (tts != null) {
+                    tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speak");
+                }
+            } catch (Exception e) { Log.e(TAG, "speak error", e); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public void speakUrl(String url) {
+            try {
+                if (tts != null) {
+                    tts.speak("播报", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speakUrl");
+                }
+            } catch (Exception e) { Log.e(TAG, "speakUrl error", e); }
         }
     }
 }
