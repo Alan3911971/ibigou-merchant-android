@@ -543,14 +543,11 @@ public class MainActivity extends AppCompatActivity {
                     debug.append("UUID获取失败:").append(e.getMessage()).append(";");
                 }
 
-                // 构建打印数据: 最简单的纯ASCII + 换行（不发送任何ESC/POS指令）
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                baos.write(text.getBytes("US-ASCII"));
-                baos.write(0x0D);  // CR
-                baos.write(0x0A);  // LF
-                baos.write(0x0A);
-                baos.write(0x0A);
-                byte[] data = baos.toByteArray();
+                // 构建打印数据: CPCL指令集（标签打印机协议）
+                String cpcl = "! 0 200 200 300 1\r\n" +
+                              "TEXT 4 0 10 10 " + text + "\r\n" +
+                              "PRINT\r\n";
+                byte[] data = cpcl.getBytes("US-ASCII");
 
                 if (isBleConnection && btGatt != null && btWriteChar != null) {
                     // BLE写入
@@ -560,7 +557,7 @@ public class MainActivity extends AppCompatActivity {
                     // 经典蓝牙写入
                     btOut.write(data);
                     btOut.flush();
-                    debug.append("SPP写入").append(data.length).append("字节;");
+                    debug.append("CPCL写入").append(data.length).append("字节;");
                     
                     // 读取打印机返回数据
                     try {
