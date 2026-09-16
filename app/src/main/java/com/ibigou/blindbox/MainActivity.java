@@ -296,45 +296,45 @@ public class MainActivity extends AppCompatActivity {
                 BluetoothSocket socket = null;
                 Exception lastError = null;
 
-                // 优先尝试非标准SPP的自定义UUID（自定义UUID可能才是数据通道）
+                // 优先尝试标准SPP（已验证标准SPP通道支持ESC/POS纯文字打印）
                 try {
                     android.os.Parcelable[] uuids = device.getUuids();
                     if (uuids != null) {
-                        // 先尝试非标准UUID
+                        // 先尝试标准SPP UUID
                         for (android.os.Parcelable u : uuids) {
                             UUID uuid = ((android.os.ParcelUuid) u).getUuid();
-                            if (uuid.toString().startsWith("00001101")) continue; // 跳过标准SPP
+                            if (!uuid.toString().startsWith("00001101")) continue;
                             try {
-                                Log.d(TAG, "尝试自定义UUID: " + uuid);
+                                Log.d(TAG, "尝试标准SPP UUID: " + uuid);
                                 socket = device.createRfcommSocketToServiceRecord(uuid);
                                 socket.connect();
                                 if (socket.isConnected()) {
-                                    connectMethod = "自定义UUID:" + uuid.toString();
-                                    Log.d(TAG, "自定义UUID连接成功: " + uuid);
+                                    connectMethod = "标准SPP:" + uuid.toString();
+                                    Log.d(TAG, "标准SPP连接成功: " + uuid);
                                     break;
                                 }
                             } catch (Exception e) {
-                                Log.e(TAG, "自定义UUID " + uuid + " 失败: " + e.getMessage());
+                                Log.e(TAG, "标准SPP " + uuid + " 失败: " + e.getMessage());
                                 try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                                 socket = null;
                             }
                         }
-                        // 再尝试标准SPP
+                        // 标准SPP不行再尝试自定义UUID（LPAPI协议通道，不支持ESC/POS）
                         if (socket == null) {
                             for (android.os.Parcelable u : uuids) {
                                 UUID uuid = ((android.os.ParcelUuid) u).getUuid();
-                                if (!uuid.toString().startsWith("00001101")) continue;
+                                if (uuid.toString().startsWith("00001101")) continue;
                                 try {
-                                    Log.d(TAG, "尝试标准SPP UUID: " + uuid);
+                                    Log.d(TAG, "尝试自定义UUID: " + uuid);
                                     socket = device.createRfcommSocketToServiceRecord(uuid);
                                     socket.connect();
                                     if (socket.isConnected()) {
-                                        connectMethod = "标准SPP:" + uuid.toString();
-                                        Log.d(TAG, "标准SPP连接成功: " + uuid);
+                                        connectMethod = "自定义UUID:" + uuid.toString();
+                                        Log.d(TAG, "自定义UUID连接成功: " + uuid);
                                         break;
                                     }
                                 } catch (Exception e) {
-                                    Log.e(TAG, "标准SPP " + uuid + " 失败: " + e.getMessage());
+                                    Log.e(TAG, "自定义UUID " + uuid + " 失败: " + e.getMessage());
                                     try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                                     socket = null;
                                 }
