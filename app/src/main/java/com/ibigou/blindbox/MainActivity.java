@@ -300,7 +300,7 @@ public class MainActivity extends AppCompatActivity {
                     android.os.Parcelable[] uuids = device.getUuids();
                     if (uuids != null) {
                         for (android.os.Parcelable u : uuids) {
-                            UUID uuid = (UUID) u;
+                            UUID uuid = ((android.os.ParcelUuid) u).getUuid();
                             try {
                                 Log.d(TAG, "尝试UUID: " + uuid);
                                 socket = device.createRfcommSocketToServiceRecord(uuid);
@@ -540,7 +540,7 @@ public class MainActivity extends AppCompatActivity {
                     if (uuids != null) {
                         StringBuilder ub = new StringBuilder();
                         for (android.os.Parcelable u : uuids) {
-                            ub.append(u.toString().substring(0, 8)).append(",");
+                            ub.append(((android.os.ParcelUuid) u).getUuid().toString().substring(0, 8)).append(",");
                         }
                         debug.append("UUIDs=").append(ub.toString()).append(";");
                     }
