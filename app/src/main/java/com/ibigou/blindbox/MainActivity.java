@@ -269,143 +269,131 @@ public class MainActivity extends AppCompatActivity {
                     device.createBond();
                     Thread.sleep(3000);
                 }
-                mainHandler.post(() -> Toast.makeText(this, "正在连接(BLE优先)...", Toast.LENGTH_SHORT).show());
+                mainHandler.post(() -> Toast.makeText(this, "正在连接...", Toast.LENGTH_SHORT).show());
                 btAdapter.cancelDiscovery();
+
+                // ===== 第一步：获取设备支持的所有UUID =====
+                StringBuilder uuidInfo = new StringBuilder();
+                try {
+                    device.fetchUuidsWithSdp();
+                    Thread.sleep(2000);
+                    android.os.Parcelable[] uuids = device.getUuids();
+                    if (uuids != null) {
+                        for (android.os.Parcelable u : uuids) {
+                            uuidInfo.append(u.toString()).append(";");
+                        }
+                    }
+                    Log.d(TAG, "设备支持的UUID: " + uuidInfo.toString());
+                } catch (Exception e) {
+                    Log.e(TAG, "获取UUID失败: " + e.getMessage());
+                }
 
                 boolean connected = false;
                 String connectMethod = "";
 
-                // ===== 方式1: BLE连接（优先，很多便宜热敏打印机是BLE）=====
+                // ===== 第二步：用设备实际支持的UUID连接 =====
+                BluetoothSocket socket = null;
+                Exception lastError = null;
+
+                // 尝试设备支持的所有UUID
                 try {
-                    Log.d(TAG, "尝试BLE连接...");
-                    bleConnectLatch = new CountDownLatch(1);
-                    bleServiceLatch = new CountDownLatch(1);
-
-                    BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
-                        @Override
-                        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-                            Log.d(TAG, "BLE连接状态: " + newState + " status=" + status);
-                            if (newState == BluetoothProfile.STATE_CONNECTED) {
-                                bleConnectLatch.countDown();
-                                gatt.discoverServices();
-                            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                                bleConnectLatch.countDown();
-                                bleServiceLatch.countDown();
-                            }
-                        }
-                        @Override
-                        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-                            Log.d(TAG, "BLE服务发现: status=" + status);
-                            if (status == BluetoothGatt.GATT_SUCCESS) {
-                                // 查找打印特征值
-                                for (BluetoothGattService svc : gatt.getServices()) {
-                                    Log.d(TAG, "服务: " + svc.getUuid());
-                                    for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
-                                        Log.d(TAG, "  特征值: " + ch.getUuid() + " props=" + ch.getProperties());
-                                        // 可写特征值
-                                        if ((ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0 ||
-                                            (ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
-                                            btWriteChar = ch;
-                                            Log.d(TAG, "找到写入特征值: " + ch.getUuid());
-                                        }
-                                    }
+                    android.os.Parcelable[] uuids = device.getUuids();
+                    if (uuids != null) {
+                        for (android.os.Parcelable u : uuids) {
+                            UUID uuid = (UUID) u;
+                            try {
+                                Log.d(TAG, "尝试UUID: " + uuid);
+                                socket = device.createRfcommSocketToServiceRecord(uuid);
+                                socket.connect();
+                                if (socket.isConnected()) {
+                                    connectMethod = "UUID:" + uuid.toString().substring(0, 8);
+                                    Log.d(TAG, "UUID连接成功: " + uuid);
+                                    break;
                                 }
+                            } catch (Exception e) {
+                                Log.e(TAG, "UUID " + uuid + " 失败: " + e.getMessage());
+                                try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                                socket = null;
                             }
-                            bleServiceLatch.countDown();
                         }
-                    };
-
-                    btGatt = device.connectGatt(this, false, gattCallback);
-                    // 等待连接
-                    boolean connOk = bleConnectLatch.await(8, TimeUnit.SECONDS);
-                    if (!connOk) {
-                        throw new Exception("BLE连接超时");
                     }
-                    // 等待服务发现
-                    boolean svcOk = bleServiceLatch.await(8, TimeUnit.SECONDS);
-                    if (!svcOk || btWriteChar == null) {
-                        throw new Exception("BLE服务发现失败或未找到写入特征值");
-                    }
-
-                    isBleConnection = true;
-                    connected = true;
-                    connectMethod = "BLE";
-                    btDeviceName = device.getName();
-                    Log.d(TAG, "BLE连接成功，写入特征值: " + btWriteChar.getUuid());
-
-                    // 发送测试文字
-                    Thread.sleep(500);
-                    bleWriteData("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
-                    Thread.sleep(500);
-
                 } catch (Exception e) {
-                    Log.e(TAG, "BLE连接失败: " + e.getMessage());
-                    try { if (btGatt != null) { btGatt.close(); btGatt = null; } } catch (Exception ignored) {}
-                    isBleConnection = false;
-                    btWriteChar = null;
+                    lastError = e;
                 }
 
-                // ===== 方式2: 经典蓝牙SPP（备选）=====
-                if (!connected) {
-                    Log.d(TAG, "BLE失败，尝试经典蓝牙SPP...");
-                    BluetoothSocket socket = null;
-                    Exception lastError = null;
-
-                    // 反射端口1
+                // 如果设备UUID都不行，尝试标准SPP
+                if (socket == null) {
                     try {
-                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-                        socket = (BluetoothSocket) m.invoke(device, 1);
+                        socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
                         socket.connect();
-                        connectMethod = "经典-反射端口1";
+                        connectMethod = "标准SPP";
                     } catch (Exception e) {
                         lastError = e;
                         try { if (socket != null) socket.close(); } catch (Exception ignored) {}
                         socket = null;
                     }
-                    // 不安全SPP
-                    if (socket == null) {
-                        try {
-                            socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-                            socket.connect();
-                            connectMethod = "经典-不安全SPP";
-                        } catch (Exception e) {
-                            lastError = e;
-                            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                            socket = null;
-                        }
-                    }
-                    // 标准SPP
-                    if (socket == null) {
-                        try {
-                            socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                            socket.connect();
-                            connectMethod = "经典-标准SPP";
-                        } catch (Exception e) {
-                            lastError = e;
-                            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                            socket = null;
-                        }
-                    }
+                }
 
-                    if (socket != null) {
-                        btSocket = socket;
-                        btOut = btSocket.getOutputStream();
-                        btDeviceName = device.getName();
-                        isBleConnection = false;
-                        connected = true;
-                        Thread.sleep(500);
-                        btOut.write("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
-                        btOut.flush();
-                        Thread.sleep(500);
-                    } else {
-                        throw lastError != null ? lastError : new Exception("所有连接方式都失败");
+                // 尝试不安全SPP
+                if (socket == null) {
+                    try {
+                        socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                        socket.connect();
+                        connectMethod = "不安全SPP";
+                    } catch (Exception e) {
+                        lastError = e;
+                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                        socket = null;
                     }
                 }
 
+                // 尝试反射端口1-5
+                if (socket == null) {
+                    for (int port = 1; port <= 5; port++) {
+                        try {
+                            java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                            socket = (BluetoothSocket) m.invoke(device, port);
+                            socket.connect();
+                            if (socket.isConnected()) {
+                                connectMethod = "反射端口" + port;
+                                break;
+                            }
+                        } catch (Exception e) {
+                            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                            socket = null;
+                        }
+                    }
+                }
+
+                if (socket == null) {
+                    throw lastError != null ? lastError : new Exception("所有连接方式都失败");
+                }
+
+                btSocket = socket;
+                btOut = btSocket.getOutputStream();
+                btDeviceName = device.getName();
+                isBleConnection = false;
+
+                // 连接成功后，先发送换行符测试是否走纸
+                Thread.sleep(500);
+                btOut.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+                btOut.flush();
+                Thread.sleep(500);
+
+                // 发送ESC @初始化 + 测试文字
+                btOut.write(new byte[]{0x1B, 0x40});
+                btOut.flush();
+                Thread.sleep(100);
+                btOut.write("PRINTER CONNECTED\n\n\n\n".getBytes("US-ASCII"));
+                btOut.flush();
+                Thread.sleep(500);
+
                 final String finalMethod = connectMethod;
+                final String finalUuidInfo = uuidInfo.toString();
                 mainHandler.post(() -> {
                     Toast.makeText(this, "✅ 已连接(" + finalMethod + "): " + btDeviceName, Toast.LENGTH_LONG).show();
                     webView.post(() -> webView.evaluateJavascript("if(window._onBtConnected)window._onBtConnected('" + btDeviceName + "');", null));
+                    Log.d(TAG, "设备UUID: " + finalUuidInfo);
                 });
             } catch (Exception e) {
                 Log.e(TAG, "connect failed", e);
@@ -546,6 +534,19 @@ public class MainActivity extends AppCompatActivity {
                 debug.append("btGatt=").append(btGatt != null).append(";");
                 debug.append("btWriteChar=").append(btWriteChar != null).append(";");
                 debug.append("btSocket=").append(btSocket != null).append(";");
+                // 获取设备UUID
+                try {
+                    android.os.Parcelable[] uuids = btSocket.getRemoteDevice().getUuids();
+                    if (uuids != null) {
+                        StringBuilder ub = new StringBuilder();
+                        for (android.os.Parcelable u : uuids) {
+                            ub.append(u.toString().substring(0, 8)).append(",");
+                        }
+                        debug.append("UUIDs=").append(ub.toString()).append(";");
+                    }
+                } catch (Exception e) {
+                    debug.append("UUID获取失败:").append(e.getMessage()).append(";");
+                }
 
                 // 构建打印数据: ESC @初始化 + GBK中文 + 换行
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
