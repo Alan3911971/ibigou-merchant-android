@@ -567,7 +567,7 @@ public class MainActivity extends AppCompatActivity {
 
         @android.webkit.JavascriptInterface
         public void showDevicePicker() {
-            runOnUiThread(() -> startScan());
+            runOnUiThread(() -> MainActivity.this.showDevicePicker());
         }
 
         @android.webkit.JavascriptInterface
@@ -667,7 +667,7 @@ public class MainActivity extends AppCompatActivity {
         public void speakUrl(String url) {
             try {
                 if (nativeTTS != null) {
-                    nativeTTS.speak("播报");
+                    nativeTTS.speakUrl(url);
                 }
             } catch (Exception e) { Log.e(TAG, "speakUrl error", e); }
         }
