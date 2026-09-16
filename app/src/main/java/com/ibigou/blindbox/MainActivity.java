@@ -540,4 +540,73 @@ public class MainActivity extends AppCompatActivity {
         try { JSONObject o = new JSONObject(); o.put("code", -1); o.put("msg", msg != null ? msg : "error"); return o.toString(); }
         catch (Exception e) { return "{\"code\":-1,\"msg\":\"error\"}"; }
     }
+
+    public class AndroidBridge {
+        @android.webkit.JavascriptInterface
+        public String getBluetoothStatus() {
+            try {
+                JSONObject o = new JSONObject();
+                o.put("isAvailable", btAdapter != null);
+                o.put("isBluetoothEnabled", btAdapter != null && btAdapter.isEnabled());
+                o.put("isConnected", btSocket != null && btSocket.isConnected());
+                o.put("deviceName", btDeviceName != null ? btDeviceName : "");
+                o.put("connectMethod", connectMethod != null ? connectMethod : "");
+                return o.toString();
+            } catch (Exception e) { return err(e.getMessage()); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public String connectPrinter(String mac) {
+            try {
+                if (btSocket != null && btSocket.isConnected()) {
+                    return "{\"code\":0,\"msg\":\"already connected\",\"device\":\"" + btDeviceName + "\"}";
+                }
+                if (btAdapter == null || !btAdapter.isEnabled()) {
+                    return err("Bluetooth not enabled");
+                }
+                BluetoothDevice device = btAdapter.getRemoteDevice(mac);
+                connectToDevice(device);
+                if (btSocket != null && btSocket.isConnected()) {
+                    return "{\"code\":0,\"msg\":\"connected\",\"device\":\"" + btDeviceName + "\",\"method\":\"" + connectMethod + "\"}";
+                }
+                return err("Connection failed");
+            } catch (Exception e) { return err(e.getMessage()); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public String disconnectPrinter() {
+            try {
+                if (btSocket != null) { btSocket.close(); btSocket = null; }
+                if (outStream != null) { outStream = null; }
+                if (inStream != null) { inStream = null; }
+                btDeviceName = null;
+                connectMethod = null;
+                return "{\"code\":0,\"msg\":\"disconnected\"}";
+            } catch (Exception e) { return err(e.getMessage()); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public String printText(String text) {
+            try {
+                if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
+                byte[] data = text.getBytes("GBK");
+                outStream.write(new byte[]{0x1B, 0x40}); // ESC @ init
+                outStream.write(data);
+                outStream.write(new byte[]{0x0A});
+                outStream.flush();
+                return "{\"code\":0,\"msg\":\"ok\",\"bytes\":" + data.length + "}";
+            } catch (Exception e) { return err(e.getMessage()); }
+        }
+
+        @android.webkit.JavascriptInterface
+        public String printQR(String url, String shopName) {
+            try {
+                if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
+                byte[] data = buildEscPosQR(url, shopName);
+                outStream.write(data);
+                outStream.flush();
+                return "{\"code\":0,\"msg\":\"ok\",\"bytes\":" + data.length + "}";
+            } catch (Exception e) { return err(e.getMessage()); }
+        }
+    }
 }
