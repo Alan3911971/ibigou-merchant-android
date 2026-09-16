@@ -577,8 +577,8 @@ public class MainActivity extends AppCompatActivity {
         public String disconnectPrinter() {
             try {
                 if (btSocket != null) { btSocket.close(); btSocket = null; }
-                if (outStream != null) { outStream = null; }
-                if (inStream != null) { inStream = null; }
+                if (btOut != null) { btOut = null; }
+                
                 btDeviceName = null;
                 connectMethod = null;
                 return "{\"code\":0,\"msg\":\"disconnected\"}";
@@ -590,10 +590,10 @@ public class MainActivity extends AppCompatActivity {
             try {
                 if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
                 byte[] data = text.getBytes("GBK");
-                outStream.write(new byte[]{0x1B, 0x40}); // ESC @ init
-                outStream.write(data);
-                outStream.write(new byte[]{0x0A});
-                outStream.flush();
+                btOut.write(new byte[]{0x1B, 0x40}); // ESC @ init
+                btOut.write(data);
+                btOut.write(new byte[]{0x0A});
+                btOut.flush();
                 return "{\"code\":0,\"msg\":\"ok\",\"bytes\":" + data.length + "}";
             } catch (Exception e) { return err(e.getMessage()); }
         }
@@ -603,8 +603,8 @@ public class MainActivity extends AppCompatActivity {
             try {
                 if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
                 byte[] data = buildEscPosQR(url, shopName);
-                outStream.write(data);
-                outStream.flush();
+                btOut.write(data);
+                btOut.flush();
                 return "{\"code\":0,\"msg\":\"ok\",\"bytes\":" + data.length + "}";
             } catch (Exception e) { return err(e.getMessage()); }
         }
