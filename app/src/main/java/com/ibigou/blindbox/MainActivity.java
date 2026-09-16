@@ -4,8 +4,15 @@ import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothSocket;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -46,6 +53,11 @@ public class MainActivity extends AppCompatActivity {
     private Handler mainHandler = new Handler(Looper.getMainLooper());
     private BluetoothSocket btSocket;
     private java.io.OutputStream btOut;
+    private BluetoothGatt btGatt;
+    private BluetoothGattCharacteristic btWriteChar;
+    private boolean isBleConnection = false;
+    private CountDownLatch bleConnectLatch;
+    private CountDownLatch bleServiceLatch;
     private String btDeviceName;
     private boolean btScanning = false;
     private final Map<String, BluetoothDevice> discoveredDevices = new HashMap<>();
@@ -256,101 +268,138 @@ public class MainActivity extends AppCompatActivity {
                     mainHandler.post(() -> Toast.makeText(this, "正在配对 " + dn + "...", Toast.LENGTH_SHORT).show());
                     device.createBond();
                     Thread.sleep(3000);
-                    if (device.getBondState() != BluetoothDevice.BOND_BONDED) {
-                        mainHandler.post(() -> Toast.makeText(this, "配对失败，请重试", Toast.LENGTH_SHORT).show());
-                        return;
-                    }
                 }
-                mainHandler.post(() -> Toast.makeText(this, "正在连接...", Toast.LENGTH_SHORT).show());
+                mainHandler.post(() -> Toast.makeText(this, "正在连接(BLE优先)...", Toast.LENGTH_SHORT).show());
                 btAdapter.cancelDiscovery();
 
-                // 尝试多种连接方式（优先反射方式，很多热敏打印机需要这个）
-                BluetoothSocket socket = null;
-                Exception lastError = null;
+                boolean connected = false;
                 String connectMethod = "";
 
-                // 方式1: 反射调用createRfcommSocket(端口1) - 很多便宜热敏打印机需要这个
+                // ===== 方式1: BLE连接（优先，很多便宜热敏打印机是BLE）=====
                 try {
-                    Log.d(TAG, "尝试方式1: 反射 createRfcommSocket(1)");
-                    java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-                    socket = (BluetoothSocket) m.invoke(device, 1);
-                    socket.connect();
-                    connectMethod = "反射端口1";
-                    Log.d(TAG, "方式1(反射端口1)成功");
-                } catch (Exception e) {
-                    lastError = e;
-                    Log.e(TAG, "方式1(反射端口1)失败: " + e.getMessage());
-                    try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                    socket = null;
-                }
+                    Log.d(TAG, "尝试BLE连接...");
+                    bleConnectLatch = new CountDownLatch(1);
+                    bleServiceLatch = new CountDownLatch(1);
 
-                // 方式2: 不安全SPP连接
-                if (socket == null) {
-                    try {
-                        Log.d(TAG, "尝试方式2: createInsecureRfcommSocketToServiceRecord");
-                        socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-                        socket.connect();
-                        connectMethod = "不安全SPP";
-                        Log.d(TAG, "方式2(不安全SPP)成功");
-                    } catch (Exception e) {
-                        lastError = e;
-                        Log.e(TAG, "方式2(不安全SPP)失败: " + e.getMessage());
-                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                        socket = null;
+                    BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+                        @Override
+                        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+                            Log.d(TAG, "BLE连接状态: " + newState + " status=" + status);
+                            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                                bleConnectLatch.countDown();
+                                gatt.discoverServices();
+                            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                                bleConnectLatch.countDown();
+                                bleServiceLatch.countDown();
+                            }
+                        }
+                        @Override
+                        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                            Log.d(TAG, "BLE服务发现: status=" + status);
+                            if (status == BluetoothGatt.GATT_SUCCESS) {
+                                // 查找打印特征值
+                                for (BluetoothGattService svc : gatt.getServices()) {
+                                    Log.d(TAG, "服务: " + svc.getUuid());
+                                    for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                                        Log.d(TAG, "  特征值: " + ch.getUuid() + " props=" + ch.getProperties());
+                                        // 可写特征值
+                                        if ((ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0 ||
+                                            (ch.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+                                            btWriteChar = ch;
+                                            Log.d(TAG, "找到写入特征值: " + ch.getUuid());
+                                        }
+                                    }
+                                }
+                            }
+                            bleServiceLatch.countDown();
+                        }
+                    };
+
+                    btGatt = device.connectGatt(this, false, gattCallback);
+                    // 等待连接
+                    boolean connOk = bleConnectLatch.await(8, TimeUnit.SECONDS);
+                    if (!connOk) {
+                        throw new Exception("BLE连接超时");
                     }
-                }
-
-                // 方式3: 标准SPP连接
-                if (socket == null) {
-                    try {
-                        Log.d(TAG, "尝试方式3: createRfcommSocketToServiceRecord");
-                        socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
-                        socket.connect();
-                        connectMethod = "标准SPP";
-                        Log.d(TAG, "方式3(标准SPP)成功");
-                    } catch (Exception e) {
-                        lastError = e;
-                        Log.e(TAG, "方式3(标准SPP)失败: " + e.getMessage());
-                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                        socket = null;
+                    // 等待服务发现
+                    boolean svcOk = bleServiceLatch.await(8, TimeUnit.SECONDS);
+                    if (!svcOk || btWriteChar == null) {
+                        throw new Exception("BLE服务发现失败或未找到写入特征值");
                     }
-                }
 
-                // 方式4: 反射调用createRfcommSocket(端口2)
-                if (socket == null) {
-                    try {
-                        Log.d(TAG, "尝试方式4: 反射 createRfcommSocket(2)");
-                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
-                        socket = (BluetoothSocket) m.invoke(device, 2);
-                        socket.connect();
-                        connectMethod = "反射端口2";
-                        Log.d(TAG, "方式4(反射端口2)成功");
-                    } catch (Exception e) {
-                        lastError = e;
-                        Log.e(TAG, "方式4(反射端口2)失败: " + e.getMessage());
-                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
-                        socket = null;
-                    }
-                }
+                    isBleConnection = true;
+                    connected = true;
+                    connectMethod = "BLE";
+                    btDeviceName = device.getName();
+                    Log.d(TAG, "BLE连接成功，写入特征值: " + btWriteChar.getUuid());
 
-                if (socket == null) {
-                    throw lastError != null ? lastError : new Exception("所有连接方式都失败");
-                }
-
-                btSocket = socket;
-                btOut = btSocket.getOutputStream();
-                btDeviceName = device.getName();
-
-                // 连接成功后等待，然后发送最简单的测试文字
-                try {
-                    Thread.sleep(1000);  // 等待连接稳定
-                    // 只发纯文字+换行，不发任何控制指令
-                    btOut.write("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
-                    btOut.flush();
+                    // 发送测试文字
                     Thread.sleep(500);
-                    Log.d(TAG, "连接初始化完成，已发送测试文字");
+                    bleWriteData("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
+                    Thread.sleep(500);
+
                 } catch (Exception e) {
-                    Log.e(TAG, "发送测试文字失败", e);
+                    Log.e(TAG, "BLE连接失败: " + e.getMessage());
+                    try { if (btGatt != null) { btGatt.close(); btGatt = null; } } catch (Exception ignored) {}
+                    isBleConnection = false;
+                    btWriteChar = null;
+                }
+
+                // ===== 方式2: 经典蓝牙SPP（备选）=====
+                if (!connected) {
+                    Log.d(TAG, "BLE失败，尝试经典蓝牙SPP...");
+                    BluetoothSocket socket = null;
+                    Exception lastError = null;
+
+                    // 反射端口1
+                    try {
+                        java.lang.reflect.Method m = device.getClass().getMethod("createRfcommSocket", int.class);
+                        socket = (BluetoothSocket) m.invoke(device, 1);
+                        socket.connect();
+                        connectMethod = "经典-反射端口1";
+                    } catch (Exception e) {
+                        lastError = e;
+                        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                        socket = null;
+                    }
+                    // 不安全SPP
+                    if (socket == null) {
+                        try {
+                            socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+                            socket.connect();
+                            connectMethod = "经典-不安全SPP";
+                        } catch (Exception e) {
+                            lastError = e;
+                            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                            socket = null;
+                        }
+                    }
+                    // 标准SPP
+                    if (socket == null) {
+                        try {
+                            socket = device.createRfcommSocketToServiceRecord(SPP_UUID);
+                            socket.connect();
+                            connectMethod = "经典-标准SPP";
+                        } catch (Exception e) {
+                            lastError = e;
+                            try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+                            socket = null;
+                        }
+                    }
+
+                    if (socket != null) {
+                        btSocket = socket;
+                        btOut = btSocket.getOutputStream();
+                        btDeviceName = device.getName();
+                        isBleConnection = false;
+                        connected = true;
+                        Thread.sleep(500);
+                        btOut.write("=== PRINTER CONNECTED ===\n\n\n\n".getBytes("US-ASCII"));
+                        btOut.flush();
+                        Thread.sleep(500);
+                    } else {
+                        throw lastError != null ? lastError : new Exception("所有连接方式都失败");
+                    }
                 }
 
                 final String finalMethod = connectMethod;
@@ -366,10 +415,28 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    // BLE写入数据
+    private void bleWriteData(byte[] data) throws Exception {
+        if (btGatt == null || btWriteChar == null) throw new Exception("BLE未连接");
+        // BLE单次最多20字节，需要分包
+        int mtu = 20;
+        for (int i = 0; i < data.length; i += mtu) {
+            int end = Math.min(i + mtu, data.length);
+            byte[] chunk = new byte[end - i];
+            System.arraycopy(data, i, chunk, 0, chunk.length);
+            btWriteChar.setValue(chunk);
+            btWriteChar.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+            boolean ok = btGatt.writeCharacteristic(btWriteChar);
+            if (!ok) throw new Exception("BLE写入失败 at " + i);
+            Thread.sleep(20);  // 分包间隔
+        }
+    }
+
     private void disconnectBt() {
         try { if (btOut != null) { btOut.flush(); btOut.close(); } } catch (Exception ignored) {}
         try { if (btSocket != null) btSocket.close(); } catch (Exception ignored) {}
-        btOut = null; btSocket = null; btDeviceName = null;
+        try { if (btGatt != null) { btGatt.disconnect(); btGatt.close(); } } catch (Exception ignored) {}
+        btOut = null; btSocket = null; btGatt = null; btWriteChar = null; isBleConnection = false; btDeviceName = null;
     }
 
     private byte[] buildEscPosQR(String url, String shopName) {
@@ -449,19 +516,22 @@ public class MainActivity extends AppCompatActivity {
         }
         @JavascriptInterface public String printQR(String url, String shopName) {
             try {
-                if (btOut == null) return err("not connected");
-                // 先打印文字确认打印机正常
-                btOut.write("QR CODE TEST".getBytes("US-ASCII"));
-                btOut.write(0x0A);
-                btOut.write(url.getBytes("US-ASCII"));
-                btOut.write(0x0A);
-                btOut.write(0x0A);
-                // 再打印二维码
+                if (!isConnected()) return err("not connected");
                 byte[] qrData = buildEscPosQR(url, shopName);
-                btOut.write(qrData);
-                btOut.flush();
+
+                if (isBleConnection) {
+                    bleWriteData(qrData);
+                } else {
+                    btOut.write(qrData);
+                    btOut.flush();
+                }
+
+                Thread.sleep(1000);
                 Log.d(TAG, "printQR sent " + qrData.length + " bytes");
-                JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "ok");
+                JSONObject res = new JSONObject();
+                res.put("code", 0);
+                res.put("msg", "ok");
+                res.put("bytes", qrData.length);
                 return res.toString();
             } catch (Exception e) {
                 Log.e(TAG, "printQR error", e);
@@ -470,80 +540,32 @@ public class MainActivity extends AppCompatActivity {
         }
         @JavascriptInterface public String printText(String text) {
             try {
-                if (btOut == null) return err("not connected");
+                if (!isConnected()) return err("not connected");
                 StringBuilder debug = new StringBuilder();
 
-                Thread.sleep(300);
+                // 构建打印数据: ESC @初始化 + GBK中文 + 换行
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                baos.write(new byte[]{0x1B, 0x40});  // ESC @ init
+                baos.write(new byte[]{0x1C, 0x26});  // FS & 中文模式
+                baos.write(text.getBytes("GBK"));
+                baos.write(0x0A);
+                baos.write(0x0A);
+                baos.write(0x0A);
+                baos.write(0x0A);
+                byte[] data = baos.toByteArray();
 
-                // 测试1: 打印全黑测试行（80mm打印机约576点=72字节）
-                try {
-                    // ESC * 打印位图: 0x1B 0x2A m nL nH data
-                    // m=0 (8点单密度), nL=72, nH=0, 72字节全0xFF
-                    byte[] bitmapCmd = new byte[72 + 5];
-                    bitmapCmd[0] = 0x1B;
-                    bitmapCmd[1] = 0x2A;
-                    bitmapCmd[2] = 0x00;  // m=0
-                    bitmapCmd[3] = 72;    // nL
-                    bitmapCmd[4] = 0x00;  // nH
-                    for (int i = 5; i < bitmapCmd.length; i++) {
-                        bitmapCmd[i] = (byte) 0xFF;  // 全黑
-                    }
-                    btOut.write(bitmapCmd);
-                    btOut.write(0x0A);
-                    btOut.write(0x0A);
+                if (isBleConnection) {
+                    // BLE写入
+                    bleWriteData(data);
+                    debug.append("BLE写入").append(data.length).append("字节;");
+                } else {
+                    // 经典蓝牙写入
+                    btOut.write(data);
                     btOut.flush();
-                    Thread.sleep(500);
-                    debug.append("测试1位图发送").append(bitmapCmd.length).append("字节;");
-                } catch (Exception e) {
-                    debug.append("测试1失败:").append(e.getMessage()).append(";");
+                    debug.append("SPP写入").append(data.length).append("字节;");
                 }
 
-                // 测试2: 用GBK编码打印中文
-                try {
-                    btOut.write(new byte[]{0x1B, 0x40});  // ESC @ init
-                    btOut.flush();
-                    Thread.sleep(100);
-                    btOut.write(new byte[]{0x1C, 0x26});  // FS & 进入中文模式
-                    btOut.flush();
-                    Thread.sleep(100);
-                    byte[] gbk = ("测试中文打印" + text).getBytes("GBK");
-                    btOut.write(gbk);
-                    btOut.write(0x0A);
-                    btOut.write(0x0A);
-                    btOut.write(0x0A);
-                    btOut.flush();
-                    Thread.sleep(500);
-                    debug.append("测试2GBK发送").append(gbk.length).append("字节;");
-                } catch (Exception e) {
-                    debug.append("测试2失败:").append(e.getMessage()).append(";");
-                }
-
-                // 测试3: 纯ASCII大写字母（最不可能有编码问题）
-                try {
-                    String asciiText = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789";
-                    byte[] ascii = asciiText.getBytes("US-ASCII");
-                    btOut.write(ascii);
-                    btOut.write(0x0D);
-                    btOut.write(0x0A);
-                    btOut.write(0x0D);
-                    btOut.write(0x0A);
-                    btOut.write(0x0D);
-                    btOut.write(0x0A);
-                    btOut.flush();
-                    Thread.sleep(500);
-                    debug.append("测试3ASCII发送").append(ascii.length).append("字节;");
-                } catch (Exception e) {
-                    debug.append("测试3失败:").append(e.getMessage()).append(";");
-                }
-
-                // 读取输入流
-                try {
-                    java.io.InputStream in = btSocket.getInputStream();
-                    int available = in.available();
-                    debug.append("输入流:").append(available).append("字节;");
-                } catch (Exception e) {
-                    debug.append("输入流失败:").append(e.getMessage()).append(";");
-                }
+                Thread.sleep(500);
 
                 JSONObject res = new JSONObject();
                 res.put("code", 0);
@@ -555,7 +577,7 @@ public class MainActivity extends AppCompatActivity {
                 return err(e.getMessage());
             }
         }
-        @JavascriptInterface public boolean isConnected() { return btSocket != null && btSocket.isConnected() && btOut != null; }
+        @JavascriptInterface public boolean isConnected() { return (isBleConnection && btGatt != null && btWriteChar != null) || (btSocket != null && btSocket.isConnected() && btOut != null); }
         @JavascriptInterface public void disconnect() { disconnectBt(); }
         @JavascriptInterface public String getConnectedDeviceName() { return btDeviceName; }
         @JavascriptInterface public void speak(String text) {
