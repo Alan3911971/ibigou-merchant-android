@@ -521,7 +521,7 @@ public class MainActivity extends AppCompatActivity {
             parts.add(gsCmd);
             parts.add(imageData);
 
-            // ===== 第三步：走纸约1厘米（约6行） =====
+            // ===== 第三步：走纸约1厘米（约6行） ===== // rebuild
             parts.add(new byte[]{0x1B, 0x64, 0x06});
 
             int total = 0;
