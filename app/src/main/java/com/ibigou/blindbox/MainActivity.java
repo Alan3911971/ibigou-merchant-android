@@ -399,11 +399,15 @@ public class MainActivity extends AppCompatActivity {
                 isBleConnection = false;
                 this.connectMethod = connectMethod;  // 成员变量赋值
 
-                // 连接成功后，只发送换行符测试走纸
-                Thread.sleep(500);
-                btOut.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A, 0x0A});
-                btOut.flush();
-                Thread.sleep(1000);
+                // 连接成功后，测试走纸（独立try-catch，不影响主连接）
+                try {
+                    Thread.sleep(500);
+                    btOut.write(new byte[]{0x0A, 0x0A});
+                    btOut.flush();
+                    Thread.sleep(500);
+                } catch (Exception testEx) {
+                    Log.e(TAG, "测试走纸失败（不影响连接）: " + testEx.getMessage());
+                }
 
                 final String finalMethod = connectMethod;
                 final String finalUuidInfo = uuidInfo.toString();
@@ -521,7 +525,7 @@ public class MainActivity extends AppCompatActivity {
             parts.add(gsCmd);
             parts.add(imageData);
 
-            // ===== 第三步：走纸约1厘米（约6行） ===== // rebuild
+            // ===== 第三步：走纸约1厘米（约6行） =====
             parts.add(new byte[]{0x1B, 0x64, 0x06});
 
             int total = 0;
@@ -634,6 +638,10 @@ public class MainActivity extends AppCompatActivity {
         public String printText(String text) {
             try {
                 if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
+                if (btOut == null) {
+                    // 尝试重新获取输出流
+                    try { btOut = btSocket.getOutputStream(); } catch (Exception e) { return err("Output stream broken: " + e.getMessage()); }
+                }
                 byte[] data = text.getBytes("GBK");
                 btOut.write(new byte[]{0x1B, 0x40});
                 btOut.write(data);
@@ -647,6 +655,9 @@ public class MainActivity extends AppCompatActivity {
         public String printQR(String url, String shopName) {
             try {
                 if (btSocket == null || !btSocket.isConnected()) return err("Not connected");
+                if (btOut == null) {
+                    try { btOut = btSocket.getOutputStream(); } catch (Exception e) { return err("Output stream broken: " + e.getMessage()); }
+                }
                 byte[] data = buildEscPosQR(url, shopName);
                 btOut.write(data);
                 btOut.flush();
