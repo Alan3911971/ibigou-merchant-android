@@ -455,19 +455,15 @@ public class MainActivity extends AppCompatActivity {
             byte[] footer = "\u626b\u7801\u5f00\u76f2\u76d2 \u00b7 \u5b9c\u5fc5\u8d2d".getBytes("GBK");
             java.util.List<byte[]> parts = new ArrayList<>();
 
-            // ===== 第一步：初始化 + 打印文字 =====
+            // ===== 第一步：初始化 + 打印文字（纯文字模式，不用倍宽倍高/居中，DP80S不支持） =====
             parts.add(new byte[]{0x1B, 0x40}); // ESC @ 初始化
-            parts.add(new byte[]{0x1B, 0x61, 0x01}); // 居中
-            // 店铺名（倍宽倍高）
-            parts.add(new byte[]{0x1D, 0x21, 0x11});
+            // 店铺名（普通大小）
             if (nameBytes != null) { parts.add(nameBytes); parts.add(new byte[]{0x0A}); }
-            // 恢复正常大小
-            parts.add(new byte[]{0x1D, 0x21, 0x00});
             // 副标题
             parts.add(footer);
             parts.add(new byte[]{0x0A});
-            // 走纸1行
-            parts.add(new byte[]{0x1B, 0x64, 0x01});
+            // 空行分隔
+            parts.add(new byte[]{0x0A});
 
             // ===== 第二步：绘制并打印二维码位图 =====
             int qrSize = 280;
