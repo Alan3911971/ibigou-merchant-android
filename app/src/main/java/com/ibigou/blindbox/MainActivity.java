@@ -567,7 +567,7 @@ public class MainActivity extends AppCompatActivity {
 
         @android.webkit.JavascriptInterface
         public void showDevicePicker() {
-            runOnUiThread(() -> startBluetoothScan());
+            runOnUiThread(() -> startScan());
         }
 
         @android.webkit.JavascriptInterface
@@ -657,8 +657,8 @@ public class MainActivity extends AppCompatActivity {
         @android.webkit.JavascriptInterface
         public void speak(String text) {
             try {
-                if (tts != null) {
-                    tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speak");
+                if (nativeTTS != null) {
+                    nativeTTS.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speak");
                 }
             } catch (Exception e) { Log.e(TAG, "speak error", e); }
         }
@@ -666,8 +666,8 @@ public class MainActivity extends AppCompatActivity {
         @android.webkit.JavascriptInterface
         public void speakUrl(String url) {
             try {
-                if (tts != null) {
-                    tts.speak("播报", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speakUrl");
+                if (nativeTTS != null) {
+                    nativeTTS.speak("播报", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "speakUrl");
                 }
             } catch (Exception e) { Log.e(TAG, "speakUrl error", e); }
         }
