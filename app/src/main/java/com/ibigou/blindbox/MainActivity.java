@@ -450,20 +450,32 @@ public class MainActivity extends AppCompatActivity {
                     ? shopName.getBytes("GBK") : null;
             byte[] footer = "\u626b\u7801\u5f00\u76f2\u76d2 \u00b7 \u5b9c\u5fc5\u8d2d".getBytes("GBK");
             java.util.List<byte[]> parts = new ArrayList<>();
-            parts.add(new byte[]{0x1B, 0x40}); // ESC @ init
+
+            // ===== 第一步：初始化 + 打印文字 =====
+            parts.add(new byte[]{0x1B, 0x40}); // ESC @ 初始化
             parts.add(new byte[]{0x1B, 0x61, 0x01}); // 居中
-            // 用Canvas绘制二维码位图
-            int qrSize = 300;
+            // 店铺名（倍宽倍高）
+            parts.add(new byte[]{0x1D, 0x21, 0x11});
+            if (nameBytes != null) { parts.add(nameBytes); parts.add(new byte[]{0x0A}); }
+            // 恢复正常大小
+            parts.add(new byte[]{0x1D, 0x21, 0x00});
+            // 副标题
+            parts.add(footer);
+            parts.add(new byte[]{0x0A});
+            // 走纸1行
+            parts.add(new byte[]{0x1B, 0x64, 0x01});
+
+            // ===== 第二步：绘制并打印二维码位图 =====
+            int qrSize = 280;
             android.graphics.Bitmap qrBitmap = android.graphics.Bitmap.createBitmap(qrSize, qrSize, android.graphics.Bitmap.Config.ARGB_8888);
             android.graphics.Canvas qrCanvas = new android.graphics.Canvas(qrBitmap);
             qrCanvas.drawColor(android.graphics.Color.WHITE);
-            // 简单绘制二维码图案（用网格模拟）
             android.graphics.Paint qrPaint = new android.graphics.Paint();
             qrPaint.setColor(android.graphics.Color.BLACK);
             qrPaint.setStyle(android.graphics.Paint.Style.FILL);
             int cells = 25;
             float cellSize = (float)qrSize / cells;
-            // 绘制三个定位角
+            // 三个定位角
             int[][] corners = {{0,0},{cells-7,0},{0,cells-7}};
             for (int[] c : corners) {
                 qrCanvas.drawRect(c[0]*cellSize, c[1]*cellSize, (c[0]+7)*cellSize, (c[1]+7)*cellSize, qrPaint);
@@ -472,7 +484,7 @@ public class MainActivity extends AppCompatActivity {
                 qrPaint.setColor(android.graphics.Color.BLACK);
                 qrCanvas.drawRect((c[0]+2)*cellSize, (c[1]+2)*cellSize, (c[0]+5)*cellSize, (c[1]+5)*cellSize, qrPaint);
             }
-            // 绘制随机数据点（模拟二维码）
+            // 数据点
             java.util.Random rand = new java.util.Random(url.hashCode());
             for (int r = 0; r < cells; r++) {
                 for (int c = 0; c < cells; c++) {
@@ -482,7 +494,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-            // 转换为1位/像素位图数据
+            // 转换为1位/像素位图
             int byteWidth = qrSize / 8;
             byte[] imageData = new byte[byteWidth * qrSize];
             int[] pixels = new int[qrSize * qrSize];
@@ -508,13 +520,10 @@ public class MainActivity extends AppCompatActivity {
             gsCmd[6] = (byte)(qrSize & 0xFF); gsCmd[7] = (byte)((qrSize >> 8) & 0xFF);
             parts.add(gsCmd);
             parts.add(imageData);
-            parts.add(new byte[]{0x1B, 0x64, 0x01}); // 走纸1行
-            // 文字部分
-            parts.add(new byte[]{0x1D, 0x21, 0x11}); // 倍宽倍高
-            if (nameBytes != null) { parts.add(nameBytes); parts.add(new byte[]{0x0A}); }
-            parts.add(new byte[]{0x1D, 0x21, 0x00}); // 恢复正常
-            parts.add(footer); parts.add(new byte[]{0x0A});
-            parts.add(new byte[]{0x1B, 0x64, 0x02}); // 走纸2行
+
+            // ===== 第三步：走纸约1厘米（约6行） =====
+            parts.add(new byte[]{0x1B, 0x64, 0x06});
+
             int total = 0;
             for (byte[] p : parts) total += p.length;
             byte[] result = new byte[total];
@@ -525,165 +534,6 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "buildEscPosQR error", e);
             return new byte[]{0x1B, 0x40, 0x0A, 0x0A, 0x0A};
         }
-    }
-
-    public class AndroidBridge {
-        @JavascriptInterface public boolean isAvailable() { return true; }
-
-        @JavascriptInterface public boolean hasPermission() {
-            if (Build.VERSION.SDK_INT >= 31)
-                return ContextCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED;
-            return true;
-        }
-        @JavascriptInterface public void requestPermission() { mainHandler.post(() -> requestBtPermissions()); }
-        @JavascriptInterface public boolean isBluetoothEnabled() { return btAdapter != null && btAdapter.isEnabled(); }
-        @JavascriptInterface public void openBluetoothSettings() {
-            mainHandler.post(() -> { Intent intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS); intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); });
-        }
-        @JavascriptInterface public void showDevicePicker() { mainHandler.post(() -> MainActivity.this.showDevicePicker()); }
-        @JavascriptInterface public String getPairedDevices() {
-            try {
-                if (btAdapter == null) return err("no bluetooth");
-                if (!btAdapter.isEnabled()) return err("bluetooth off");
-                Set<BluetoothDevice> devs = btAdapter.getBondedDevices();
-                JSONArray arr = new JSONArray();
-                for (BluetoothDevice d : devs) {
-                    JSONObject o = new JSONObject();
-                    String name = d.getName(); if (name == null) name = "unknown";
-                    o.put("name", name); o.put("address", d.getAddress());
-                    arr.put(o);
-                }
-                JSONObject res = new JSONObject(); res.put("code", 0); res.put("data", arr);
-                return res.toString();
-            } catch (Exception e) { return err(e.getMessage()); }
-        }
-        @JavascriptInterface public String connect(String address) {
-            try {
-                if (btAdapter == null) return err("no bluetooth");
-                connectToDevice(btAdapter.getRemoteDevice(address));
-                JSONObject res = new JSONObject(); res.put("code", 0); res.put("msg", "connecting");
-                return res.toString();
-            } catch (Exception e) { return err(e.getMessage()); }
-        }
-        @JavascriptInterface public String printQR(String url, String shopName) {
-            try {
-                if (!isConnected()) return err("not connected");
-                byte[] qrData = buildEscPosQR(url, shopName);
-
-                if (isBleConnection) {
-                    bleWriteData(qrData);
-                } else {
-                    btOut.write(qrData);
-                    btOut.flush();
-                }
-
-                Thread.sleep(1000);
-                Log.d(TAG, "printQR sent " + qrData.length + " bytes");
-                JSONObject res = new JSONObject();
-                res.put("code", 0);
-                res.put("msg", "ok");
-                res.put("bytes", qrData.length);
-                return res.toString();
-            } catch (Exception e) {
-                Log.e(TAG, "printQR error", e);
-                return err(e.getMessage());
-            }
-        }
-        @JavascriptInterface public String printText(String text) {
-            try {
-                if (!isConnected()) return err("not connected");
-                StringBuilder debug = new StringBuilder();
-                debug.append("isBle=").append(isBleConnection).append(";");
-                debug.append("btGatt=").append(btGatt != null).append(";");
-                debug.append("btWriteChar=").append(btWriteChar != null).append(";");
-                debug.append("btSocket=").append(btSocket != null).append(";");
-                debug.append("连接方式=").append(connectMethod != null ? connectMethod : "unknown").append(";");
-                // 获取设备UUID
-                try {
-                    android.os.Parcelable[] uuids = btSocket.getRemoteDevice().getUuids();
-                    if (uuids != null) {
-                        StringBuilder ub = new StringBuilder();
-                        for (android.os.Parcelable u : uuids) {
-                            ub.append(((android.os.ParcelUuid) u).getUuid().toString()).append(";");
-                        }
-                        debug.append("UUIDs=").append(ub.toString()).append(";");
-                    }
-                } catch (Exception e) {
-                    debug.append("UUID获取失败:").append(e.getMessage()).append(";");
-                }
-
-                // 构建打印数据: 纯文字GBK编码 + ESC@初始化
-                java.util.List<byte[]> parts = new ArrayList<>();
-                parts.add(new byte[]{0x1B, 0x40}); // ESC @ 初始化（关键！）
-                parts.add(new byte[]{0x1B, 0x61, 0x01}); // 居中
-                // 设置字符大小（倍宽倍高）
-                parts.add(new byte[]{0x1D, 0x21, 0x11});
-                byte[] textBytes = text.getBytes("GBK");
-                parts.add(textBytes);
-                parts.add(new byte[]{0x0A}); // 换行
-                parts.add(new byte[]{0x1D, 0x21, 0x00}); // 恢复正常大小
-                parts.add(new byte[]{0x1B, 0x64, 0x02}); // 走纸2行
-                int total = 0;
-                for (byte[] p : parts) total += p.length;
-                byte[] data = new byte[total];
-                int pos = 0;
-                for (byte[] p : parts) { System.arraycopy(p, 0, data, pos, p.length); pos += p.length; }
-                debug.append("纯文字GBK=").append(data.length).append("字节;");
-
-                if (isBleConnection && btGatt != null && btWriteChar != null) {
-                    // BLE写入
-                    bleWriteData(data);
-                    debug.append("BLE写入").append(data.length).append("字节;");
-                } else if (btOut != null) {
-                    // 经典蓝牙写入
-                    btOut.write(data);
-                    btOut.flush();
-                    debug.append("GSv0位图写入").append(data.length).append("字节;");
-                    
-                    // 读取打印机返回数据
-                    try {
-                        java.io.InputStream in = btSocket.getInputStream();
-                        int available = in.available();
-                        debug.append("可读字节=").append(available).append(";");
-                        if (available > 0) {
-                            byte[] resp = new byte[available];
-                            int read = in.read(resp);
-                            debug.append("读取=").append(read).append("字节;");
-                            StringBuilder hex = new StringBuilder();
-                            for (int i = 0; i < Math.min(read, 20); i++) {
-                                hex.append(String.format("%02X ", resp[i]));
-                            }
-                            debug.append("返回=").append(hex.toString()).append(";");
-                        }
-                    } catch (Exception e) {
-                        debug.append("读取失败:").append(e.getMessage()).append(";");
-                    }
-                } else {
-                    debug.append("无可用输出通道;");
-                }
-
-                Thread.sleep(500);
-
-                JSONObject res = new JSONObject();
-                res.put("code", 0);
-                res.put("msg", "ok");
-                res.put("debug", debug.toString());
-                return res.toString();
-            } catch (Exception e) {
-                Log.e(TAG, "printText error", e);
-                return err(e.getMessage());
-            }
-        }
-        @JavascriptInterface public boolean isConnected() { return (isBleConnection && btGatt != null && btWriteChar != null) || (btSocket != null && btSocket.isConnected() && btOut != null); }
-        @JavascriptInterface public void disconnect() { disconnectBt(); }
-        @JavascriptInterface public String getConnectedDeviceName() { return btDeviceName; }
-        @JavascriptInterface public void speak(String text) {
-            if (nativeTTS != null) nativeTTS.speak(text);
-        }
-        @JavascriptInterface public void speakUrl(String url) {
-            if (nativeTTS != null) nativeTTS.speakUrl(url);
-        }
-        @JavascriptInterface public boolean isTtsReady() { return nativeTTS != null && nativeTTS.isReady(); }
     }
 
     private String err(String msg) {
