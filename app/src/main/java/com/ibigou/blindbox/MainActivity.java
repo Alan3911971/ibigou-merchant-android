@@ -374,20 +374,13 @@ public class MainActivity extends AppCompatActivity {
                 btOut = btSocket.getOutputStream();
                 btDeviceName = device.getName();
                 isBleConnection = false;
+                this.connectMethod = connectMethod;  // 成员变量赋值
 
-                // 连接成功后，先发送换行符测试是否走纸
+                // 连接成功后，只发送换行符测试走纸
                 Thread.sleep(500);
-                btOut.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A});
+                btOut.write(new byte[]{0x0A, 0x0A, 0x0A, 0x0A, 0x0A});
                 btOut.flush();
-                Thread.sleep(500);
-
-                // 发送ESC @初始化 + 测试文字
-                btOut.write(new byte[]{0x1B, 0x40});
-                btOut.flush();
-                Thread.sleep(100);
-                btOut.write("PRINTER CONNECTED\n\n\n\n".getBytes("US-ASCII"));
-                btOut.flush();
-                Thread.sleep(500);
+                Thread.sleep(1000);
 
                 final String finalMethod = connectMethod;
                 final String finalUuidInfo = uuidInfo.toString();
@@ -550,13 +543,11 @@ public class MainActivity extends AppCompatActivity {
                     debug.append("UUID获取失败:").append(e.getMessage()).append(";");
                 }
 
-                // 构建打印数据: ESC @初始化 + GBK中文 + 换行
+                // 构建打印数据: 最简单的纯ASCII + 换行（不发送任何ESC/POS指令）
                 java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                baos.write(new byte[]{0x1B, 0x40});  // ESC @ init
-                baos.write(new byte[]{0x1C, 0x26});  // FS & 中文模式
-                baos.write(text.getBytes("GBK"));
-                baos.write(0x0A);
-                baos.write(0x0A);
+                baos.write(text.getBytes("US-ASCII"));
+                baos.write(0x0D);  // CR
+                baos.write(0x0A);  // LF
                 baos.write(0x0A);
                 baos.write(0x0A);
                 byte[] data = baos.toByteArray();
