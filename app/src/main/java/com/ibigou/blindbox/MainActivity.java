@@ -506,10 +506,10 @@ public class MainActivity extends AppCompatActivity {
         public String printText(String text) {
             try {
                 if (!isPrinterConnected()) return err("Not connected");
-                // 页面宽72mm（80mm纸可用宽度） 高60mm 不旋转
-                api.startJob(72, 60, 0);
-                // 绘制文字：text, x=4, y=4, 宽64, 高52, 字号8mm
-                api.drawText(text == null ? "" : text, 4, 4, 64, 52, 8);
+                // 页面宽72mm（80mm纸可用宽度） 高40mm（测试文字用，减少走纸） 不旋转
+                api.startJob(72, 40, 0);
+                // 绘制文字：text, x=4, y=4, 宽64, 高32, 字号8mm
+                api.drawText(text == null ? "" : text, 4, 4, 64, 32, 8);
                 api.commitJob();
                 return ok("ok");
             } catch (Exception e) { return err(e.getMessage()); }
@@ -519,16 +519,16 @@ public class MainActivity extends AppCompatActivity {
         public String printQR(String url, String shopName) {
             try {
                 if (!isPrinterConnected()) return err("Not connected");
-                // 页面宽72mm 高80mm 不旋转
-                api.startJob(72, 80, 0);
+                // 页面宽72mm 高60mm（80×60标签纸） 不旋转
+                api.startJob(72, 60, 0);
                 // 店铺名（字号5mm，防止长店名超宽）
                 if (shopName != null && !shopName.isEmpty()) {
-                    api.drawText(shopName, 4, 4, 64, 12, 5);
+                    api.drawText(shopName, 4, 3, 64, 10, 5);
                 }
                 // 副标题
-                api.drawText("扫码开盲盒 · 宜必购", 4, 18, 64, 8, 4);
-                // 二维码（40mm宽，居中）
-                api.draw2DQRCode(url == null ? "" : url, 16, 30, 40);
+                api.drawText("扫码开盲盒 · 宜必购", 4, 15, 64, 7, 4);
+                // 二维码（36mm宽，居中，y=24开始到60mm）
+                api.draw2DQRCode(url == null ? "" : url, 18, 24, 36);
                 api.commitJob();
                 return ok("ok");
             } catch (Exception e) { return err(e.getMessage()); }
