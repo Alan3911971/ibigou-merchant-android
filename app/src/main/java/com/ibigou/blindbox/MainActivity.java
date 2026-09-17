@@ -385,6 +385,19 @@ public class MainActivity extends AppCompatActivity {
 
     // ===== AndroidBridge (H5接口，保持兼容) =====
     public class AndroidBridge {
+        // 打印任务间隔锁：两次打印之间至少间隔5秒（防止连点/连打时LPAPI任务互相覆盖）
+        private final java.util.concurrent.atomic.AtomicLong lastPrintAt = new java.util.concurrent.atomic.AtomicLong(0);
+
+        private String checkPrintGap() {
+            long now = System.currentTimeMillis();
+            long last = lastPrintAt.get();
+            if (now - last < 5000) {
+                return "{\"code\":-1,\"msg\":\"打印间隔5秒，请稍候\",\"waitMs\":" + (5000 - (now - last)) + "}";
+            }
+            lastPrintAt.set(now);
+            return null;
+        }
+
         @JavascriptInterface
         public boolean isAvailable() { return api != null; }
 
@@ -517,6 +530,8 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public String printText(String text) {
             try {
+                String gap = checkPrintGap();
+                if (gap != null) return gap;
                 if (!isPrinterConnected()) return err("Not connected");
                 applyPaperSettings();
                 // 页面宽72mm（80mm纸可用宽度） 高40mm（测试文字用，减少走纸） 不旋转
@@ -531,6 +546,8 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface
         public String printQR(String url, String shopName) {
             try {
+                String gap = checkPrintGap();
+                if (gap != null) return gap;
                 if (!isPrinterConnected()) return err("Not connected");
                 applyPaperSettings();
                 // 页面宽72mm 高60mm（80×60标签纸） 不旋转
