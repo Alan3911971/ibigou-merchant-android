@@ -349,6 +349,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ===== LPAPI 打印 =====
+    private void applyPaperSettings() {
+        try {
+            if (api != null) {
+                // 间隙标签纸：类型=2(间隙纸)，间隙长度=3mm（对照官方Demo默认值）
+                api.setPrintPageGapType(2);
+                api.setPrintPageGapLength(3);
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "applyPaperSettings failed", t);
+        }
+    }
+
     private String err(String msg) {
         try {
             JSONObject o = new JSONObject();
@@ -506,6 +518,7 @@ public class MainActivity extends AppCompatActivity {
         public String printText(String text) {
             try {
                 if (!isPrinterConnected()) return err("Not connected");
+                applyPaperSettings();
                 // 页面宽72mm（80mm纸可用宽度） 高40mm（测试文字用，减少走纸） 不旋转
                 api.startJob(72, 40, 0);
                 // 绘制文字：text, x=4, y=4, 宽64, 高32, 字号8mm
@@ -519,6 +532,7 @@ public class MainActivity extends AppCompatActivity {
         public String printQR(String url, String shopName) {
             try {
                 if (!isPrinterConnected()) return err("Not connected");
+                applyPaperSettings();
                 // 页面宽72mm 高60mm（80×60标签纸） 不旋转
                 api.startJob(72, 60, 0);
                 // 店铺名（字号5mm，防止长店名超宽）
