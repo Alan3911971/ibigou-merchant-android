@@ -352,9 +352,9 @@ public class MainActivity extends AppCompatActivity {
     private void applyPaperSettings() {
         try {
             if (api != null) {
-                // 间隙标签纸：类型=2(间隙纸)，间隙长度=3mm（对照官方Demo默认值）
-                api.setPrintPageGapType(2);
-                api.setPrintPageGapLength(3);
+                // 【诊断模式】先用连续纸(0)测试：不依赖间隙检测，按高度精确走纸
+                // 如果连续纸模式不多走纸，说明是间隙检测导致空走，再调间隙参数
+                api.setPrintPageGapType(0);
             }
         } catch (Throwable t) {
             Log.e(TAG, "applyPaperSettings failed", t);
